@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'ioc_scraper',
     'ioc_api',
+    'django_celery_beat',
 ]
 
 MIDDLEWARE = [
@@ -86,6 +87,14 @@ DATABASES = {
         'PORT':'5432',
     }
 }
+
+# Celery databases
+CELERY_BROKER_URL = "redis://localhost:6379/0"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+
+
+
 
 
 # Password validation

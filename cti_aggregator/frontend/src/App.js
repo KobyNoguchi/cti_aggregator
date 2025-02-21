@@ -1,25 +1,34 @@
-import logo from './logo.svg';
-import './App.css';
+import React, { useEffect, useState } from "react";
+import axios from "axios";
+
+const API_URL = "http://127.0.0.1:8000/api/vulnerabilities/";
 
 function App() {
+  const [data, setData] = useState([]);
+
+  useEffect(() => {
+    axios.get(API_URL)
+      .then(response => {
+        setData(response.data);
+      })
+      .catch(error => {
+        console.error("Error fetching data:", error);
+      });
+  }, []); // ✅ Closing bracket and semicolon properly placed
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+    <div>
+      <h1>Vulnerability Dashboard</h1>
+      <ul>
+        {data.map((vuln) => (
+          <li key={vuln.id}>
+            <strong>{vuln.cve_id}</strong>: {vuln.vulnerability_name} - {vuln.severity}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
 export default App;
+
