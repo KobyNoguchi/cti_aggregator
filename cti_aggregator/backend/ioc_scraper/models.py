@@ -1,7 +1,7 @@
 from django.db import models
 
 class Vulnerability(models.Model):
-    cve_id = models.CharField(max_length=50, unique=True, null=False,default="Unknown_CVE")
+    cve_id = models.CharField(max_length=50, unique=True, null=False,default="2000-01-01")
     vulnerability_name = models.CharField(max_length=500)
     description = models.TextField()
     severity = models.CharField(max_length=50)

@@ -4,4 +4,4 @@ from ioc_scraper.models import Vulnerability
 class VulnerabilitySerializer(serializers.ModelSerializer):
     class Meta:
         model = Vulnerability
-        fields = '__all__'
+        fields = "__all__"
