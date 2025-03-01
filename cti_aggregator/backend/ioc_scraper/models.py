@@ -27,3 +27,17 @@ class IntelligenceArticle(models.Model):
     
     def __str__(self):
         return f"{self.source}: {self.title}"
+
+class CrowdStrikeIntel(models.Model):
+    actor_id = models.CharField(max_length=255, primary_key=True)
+    name = models.CharField(max_length=255)
+    description = models.TextField(null=True, blank=True)
+    capabilities = models.JSONField(null=True, blank=True)
+    motivations = models.JSONField(null=True, blank=True)
+    objectives = models.JSONField(null=True, blank=True)
+    adversary_type = models.CharField(max_length=100, null=True, blank=True)
+    origins = models.JSONField(null=True, blank=True)
+    last_update_date = models.DateTimeField(null=True, blank=True)
+    
+    def __str__(self):
+        return self.name

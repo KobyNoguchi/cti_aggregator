@@ -20,4 +20,12 @@ app.conf.beat_schedule={
         "task": "ioc_scraper.tasks.fetch_all_intelligence",
         "schedule": crontab(hour=1, minute=0),  # Run at 1 AM to avoid conflicts
     },
+    'scrape-cisa-every-hour': {
+        'task': 'ioc_scraper.tasks.scrape_cisa_kev',
+        'schedule': 3600.0,  # Every hour
+    },
+    'fetch-crowdstrike-intel-every-hour': {
+        'task': 'ioc_scraper.tasks.fetch_crowdstrike_intel',
+        'schedule': 3600.0,  # Every hour
+    },
 }

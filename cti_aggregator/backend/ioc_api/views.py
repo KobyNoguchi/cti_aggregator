@@ -1,6 +1,6 @@
 from rest_framework import viewsets
-from ioc_scraper.models import Vulnerability, IntelligenceArticle
-from .serializers import VulnerabilitySerializer, IntelligenceArticleSerializer
+from ioc_scraper.models import Vulnerability, IntelligenceArticle, CrowdStrikeIntel
+from .serializers import VulnerabilitySerializer, IntelligenceArticleSerializer, CrowdStrikeIntelSerializer
 
 
 class VulnerabilityViewSet(viewsets.ReadOnlyModelViewSet):
@@ -18,4 +18,14 @@ class IntelligenceArticleViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = IntelligenceArticleSerializer
     filterset_fields = ['source']
     search_fields = ['title', 'summary']
+
+class CrowdStrikeIntelViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint that allows CrowdStrike threat intelligence to be viewed.
+    """
+    queryset = CrowdStrikeIntel.objects.all().order_by("-last_update_date")
+    serializer_class = CrowdStrikeIntelSerializer
+    filterset_fields = ['adversary_type']
+    search_fields = ['name', 'description']
+
 # Create your views here.

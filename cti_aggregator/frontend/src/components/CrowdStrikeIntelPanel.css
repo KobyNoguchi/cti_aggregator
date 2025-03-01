@@ -1,0 +1,67 @@
+.cs-intel-panel {
+  height: 100%;
+  overflow: hidden;
+}
+
+.cs-intel-panel .accordion {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.cs-intel-panel .accordion-item {
+  border: 1px solid #e2e8f0;
+  margin-bottom: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  transition: all 0.2s ease-in-out;
+}
+
+.cs-intel-panel .accordion-item:hover {
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.cs-intel-panel .accordion-button {
+  padding: 12px 16px;
+  font-weight: 500;
+}
+
+.cs-intel-panel .accordion-button:not(.collapsed) {
+  background-color: rgba(237, 100, 100, 0.1);
+  color: #e53e3e;
+}
+
+.cs-intel-panel .tag-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.cs-intel-panel .tag {
+  background-color: #ffedd5;
+  color: #c05621;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  display: inline-block;
+}
+
+.cs-intel-panel .section-title {
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-top: 12px;
+  margin-bottom: 4px;
+}
+
+.cs-intel-panel .description {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.cs-intel-panel .last-updated {
+  margin-top: 12px;
+  font-size: 0.75rem;
+  color: #718096;
+  text-align: right;
+} 

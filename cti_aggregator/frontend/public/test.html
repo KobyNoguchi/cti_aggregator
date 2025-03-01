@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CrowdStrike Intel API Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .actor {
+            border: 1px solid #ccc;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+        }
+        .actor h2 {
+            margin-top: 0;
+        }
+        .tag {
+            display: inline-block;
+            background-color: #f0f0f0;
+            padding: 3px 8px;
+            border-radius: 10px;
+            margin-right: 5px;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+        .section {
+            margin-bottom: 10px;
+        }
+        .loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 18px;
+        }
+        .error {
+            color: red;
+            padding: 20px;
+            border: 1px solid red;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>CrowdStrike Intel API Test</h1>
+    <div id="loading" class="loading">Loading data...</div>
+    <div id="error" class="error" style="display: none;"></div>
+    <div id="actors"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const actorsContainer = document.getElementById('actors');
+            const loadingElement = document.getElementById('loading');
+            const errorElement = document.getElementById('error');
+
+            // Function to render tags
+            function renderTags(items) {
+                if (!items || items.length === 0) {
+                    return '<p>None specified</p>';
+                }
+
+                let html = '';
+                items.forEach(item => {
+                    html += `<span class="tag">${item}</span>`;
+                });
+                return html;
+            }
+
+            // Fetch data from API
+            fetch('http://localhost:8000/api/crowdstrike-intel/')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Data received:', data);
+                    
+                    if (!Array.isArray(data)) {
+                        throw new Error('Expected array but got: ' + typeof data);
+                    }
+                    
+                    if (data.length === 0) {
+                        actorsContainer.innerHTML = '<p>No threat actors found.</p>';
+                        loadingElement.style.display = 'none';
+                        return;
+                    }
+                    
+                    let html = '';
+                    data.forEach(actor => {
+                        html += `
+                            <div class="actor">
+                                <h2>${actor.name} <small>(${actor.adversary_type || 'Unknown'})</small></h2>
+                                <p>${actor.description || 'No description available.'}</p>
+                                
+                                <div class="section">
+                                    <h3>Origins</h3>
+                                    ${renderTags(actor.origins)}
+                                </div>
+                                
+                                <div class="section">
+                                    <h3>Capabilities</h3>
+                                    ${renderTags(actor.capabilities)}
+                                </div>
+                                
+                                <div class="section">
+                                    <h3>Motivations</h3>
+                                    ${renderTags(actor.motivations)}
+                                </div>
+                                
+                                <div class="section">
+                                    <h3>Objectives</h3>
+                                    ${renderTags(actor.objectives)}
+                                </div>
+                                
+                                <p><small>Last updated: ${actor.last_update_date ? new Date(actor.last_update_date).toLocaleString() : 'Unknown'}</small></p>
+                            </div>
+                        `;
+                    });
+                    
+                    actorsContainer.innerHTML = html;
+                    loadingElement.style.display = 'none';
+                })
+                .catch(error => {
+                    console.error('Error fetching data:', error);
+                    errorElement.textContent = `Error: ${error.message}`;
+                    errorElement.style.display = 'block';
+                    loadingElement.style.display = 'none';
+                });
+        });
+    </script>
+</body>
+</html> 
