@@ -1,27 +1,43 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { Box, Flex, Heading, Container } from "@chakra-ui/react";
 import Dashboard from "./components/Dashboard";
 import VulnerabilityTable from "./components/VulnerabilityTable";
 import "./App.css";
 
 function App() {
+  const bgColor = "gray.50";
+  const headerBgColor = "brand.500";
+  const headerColor = "white";
+
   return (
     <Router>
-      <div className="app-container">
+      <Flex direction="column" minH="100vh" bg={bgColor}>
         {/* Banner */}
-        <header className="banner">
-          <h1>CTI Aggregator</h1>
-        </header>
+        <Box 
+          as="header" 
+          bg={headerBgColor} 
+          color={headerColor} 
+          py={4} 
+          px={6} 
+          boxShadow="md"
+        >
+          <Container maxW="container.xl">
+            <Heading size="lg">CTI Aggregator</Heading>
+          </Container>
+        </Box>
         
         {/* Main Content */}
-        <div className="content-container">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/legacy" element={<VulnerabilityTable />} />
-            {/* Add other routes as needed */}
-          </Routes>
-        </div>
-      </div>
+        <Box flex="1" p={4}>
+          <Container maxW="container.xl" h="100%">
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/legacy" element={<VulnerabilityTable />} />
+              {/* Add other routes as needed */}
+            </Routes>
+          </Container>
+        </Box>
+      </Flex>
     </Router>
   );
 }

@@ -1,44 +1,90 @@
 import React from 'react';
+import { 
+  Grid, 
+  GridItem, 
+  Box, 
+  Heading
+} from '@chakra-ui/react';
 import VulnerabilityPanel from './VulnerabilityPanel';
 import IntelligenceFeed from './IntelligenceFeed';
-import './Dashboard.css';
 
 const Dashboard = () => {
+  const panelBg = 'white';
+  const headerBg = 'blue.500';
+  const headerColor = 'white';
+
   return (
-    <div className="dashboard-container">
-      <div className="dashboard-header">
-        <h1>CTI Dashboard</h1>
-      </div>
-      
-      <div className="dashboard-grid">
-        <div className="dashboard-panel top-left">
-          <div className="panel-header">
-            <h2>Intelligence Feed</h2>
-          </div>
-          <div className="panel-content">
+    <Box h="full">
+      <Grid
+        templateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }}
+        templateRows={{ base: 'repeat(3, 1fr)', md: 'repeat(2, 1fr)' }}
+        gap={4}
+        h="full"
+      >
+        {/* Intelligence Feed Panel */}
+        <GridItem 
+          colSpan={{ base: 1, md: 1 }} 
+          rowSpan={{ base: 1, md: 1 }}
+          bg={panelBg}
+          borderRadius="md"
+          boxShadow="sm"
+          overflow="hidden"
+        >
+          <Box 
+            bg={headerBg} 
+            color={headerColor} 
+            p={3}
+          >
+            <Heading size="md">Intelligence Feed</Heading>
+          </Box>
+          <Box p={3} h="calc(100% - 50px)" overflow="hidden">
             <IntelligenceFeed />
-          </div>
-        </div>
+          </Box>
+        </GridItem>
         
-        <div className="dashboard-panel top-right">
-          <div className="panel-header">
-            <h2>CISA Known Exploited Vulnerabilities (KEV)</h2>
-          </div>
-          <div className="panel-content">
+        {/* CISA KEV Panel */}
+        <GridItem 
+          colSpan={{ base: 1, md: 2 }} 
+          rowSpan={{ base: 1, md: 2 }}
+          bg={panelBg}
+          borderRadius="md"
+          boxShadow="sm"
+          overflow="hidden"
+        >
+          <Box 
+            bg={headerBg} 
+            color={headerColor} 
+            p={3}
+          >
+            <Heading size="md">CISA Known Exploited Vulnerabilities (KEV)</Heading>
+          </Box>
+          <Box p={3} h="calc(100% - 50px)" overflow="hidden">
             <VulnerabilityPanel dataSource="cisa" />
-          </div>
-        </div>
+          </Box>
+        </GridItem>
         
-        <div className="dashboard-panel bottom-left">
-          <div className="panel-header">
-            <h2>NVD Vulnerabilities</h2>
-          </div>
-          <div className="panel-content">
+        {/* NVD Vulnerabilities Panel */}
+        <GridItem 
+          colSpan={{ base: 1, md: 1 }} 
+          rowSpan={{ base: 1, md: 1 }}
+          bg={panelBg}
+          borderRadius="md"
+          boxShadow="sm"
+          overflow="hidden"
+        >
+          <Box 
+            bg={headerBg} 
+            color={headerColor} 
+            p={3}
+          >
+            <Heading size="md">NVD Vulnerabilities</Heading>
+          </Box>
+          <Box p={3} h="calc(100% - 50px)" overflow="hidden">
             <p>NVD data will be displayed here</p>
-          </div>
-        </div>
-      </div>
-    </div>
+          </Box>
+        </GridItem>
+      </Grid>
+    </Box>
   );
 };
 
