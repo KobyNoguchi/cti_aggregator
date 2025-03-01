@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import VulnerabilityPanel from './VulnerabilityPanel';
+import IntelligenceFeed from './IntelligenceFeed';
 import './Dashboard.css';
 
 const Dashboard = () => {
@@ -15,13 +16,13 @@ const Dashboard = () => {
             <h2>Intelligence Feed</h2>
           </div>
           <div className="panel-content">
-            <p>Feedly RSS Feed will be displayed here</p>
+            <IntelligenceFeed />
           </div>
         </div>
         
         <div className="dashboard-panel top-right">
           <div className="panel-header">
-            <h2>CISA KEV</h2>
+            <h2>CISA Known Exploited Vulnerabilities (KEV)</h2>
           </div>
           <div className="panel-content">
             <VulnerabilityPanel dataSource="cisa" />
@@ -34,15 +35,6 @@ const Dashboard = () => {
           </div>
           <div className="panel-content">
             <p>NVD data will be displayed here</p>
-          </div>
-        </div>
-        
-        <div className="dashboard-panel bottom-right">
-          <div className="panel-header">
-            <h2>Greynoise Intel</h2>
-          </div>
-          <div className="panel-content">
-            <p>Greynoise data will be displayed here</p>
           </div>
         </div>
       </div>

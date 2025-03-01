@@ -1,6 +1,6 @@
 from rest_framework import viewsets
-from ioc_scraper.models import Vulnerability
-from .serializers import VulnerabilitySerializer
+from ioc_scraper.models import Vulnerability, IntelligenceArticle
+from .serializers import VulnerabilitySerializer, IntelligenceArticleSerializer
 
 
 class VulnerabilityViewSet(viewsets.ReadOnlyModelViewSet):
@@ -9,4 +9,13 @@ class VulnerabilityViewSet(viewsets.ReadOnlyModelViewSet):
     """
     queryset = Vulnerability.objects.all().order_by("-published_date")
     serializer_class = VulnerabilitySerializer
+
+class IntelligenceArticleViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint that allows intelligence articles to be viewed.
+    """
+    queryset = IntelligenceArticle.objects.all().order_by("-published_date")
+    serializer_class = IntelligenceArticleSerializer
+    filterset_fields = ['source']
+    search_fields = ['title', 'summary']
 # Create your views here.
