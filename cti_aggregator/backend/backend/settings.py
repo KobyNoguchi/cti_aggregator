@@ -38,10 +38,11 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'corsheaders',
+    'django_filters',
     'ioc_scraper',
     'ioc_api',
     'django_celery_beat',
-    'corsheaders',
 ]
 
 MIDDLEWARE = [

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from ioc_scraper.models import Vulnerability, IntelligenceArticle, CrowdStrikeIntel
+from ioc_scraper.models import Vulnerability, IntelligenceArticle, CrowdStrikeIntel, CrowdStrikeMalware
 
 class VulnerabilitySerializer(serializers.ModelSerializer):
     class Meta:
@@ -14,16 +14,31 @@ class IntelligenceArticleSerializer(serializers.ModelSerializer):
 class CrowdStrikeIntelSerializer(serializers.ModelSerializer):
     class Meta:
         model = CrowdStrikeIntel
-        fields = ['actor_id', 'name', 'description', 'capabilities', 'motivations', 
-                  'objectives', 'adversary_type', 'origins', 'last_update_date']
-
+        fields = '__all__'
+        
     def to_representation(self, instance):
-        """Ensure array fields are properly serialized."""
         representation = super().to_representation(instance)
         
-        # Ensure array fields are properly serialized
-        for field in ['capabilities', 'motivations', 'objectives', 'origins']:
-            if representation.get(field) is None:
+        # Initialize array fields to empty list if they are None
+        array_fields = ['capabilities', 'motivations', 'objectives', 'origins']
+        for field in array_fields:
+            if representation[field] is None:
+                representation[field] = []
+                
+        return representation
+
+class CrowdStrikeMalwareSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CrowdStrikeMalware
+        fields = '__all__'
+        
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        
+        # Initialize array fields to empty list if they are None
+        array_fields = ['ttps', 'targeted_industries', 'threat_groups']
+        for field in array_fields:
+            if representation[field] is None:
                 representation[field] = []
                 
         return representation

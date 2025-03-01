@@ -1,8 +1,12 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { Box, Flex, Heading, Container } from "@chakra-ui/react";
+import { Box, Flex, Heading, Container, SimpleGrid, GridItem } from "@chakra-ui/react";
 import Dashboard from "./components/Dashboard";
 import VulnerabilityTable from "./components/VulnerabilityTable";
+import VulnerabilityPanel from './components/VulnerabilityPanel';
+import IntelligenceFeed from './components/IntelligenceFeed';
+import CrowdStrikeIntelPanel from './components/CrowdStrikeIntelPanel';
+import MalwareFamiliesPanel from './components/MalwareFamiliesPanel';
 import "./App.css";
 
 function App() {

@@ -10,6 +10,8 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 # Auto-discover tasks from Django apps
 app.autodiscover_tasks()
 
+# Add broker_connection_retry_on_startup setting to address deprecation warning
+app.conf.broker_connection_retry_on_startup = True
 
 app.conf.beat_schedule={
     "fetch-cisa-kev-daily": {

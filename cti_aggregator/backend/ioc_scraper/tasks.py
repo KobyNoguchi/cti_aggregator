@@ -5,7 +5,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 import logging
 from django.utils import timezone
-from ioc_scraper.models import CrowdStrikeIntel
+from ioc_scraper.models import CrowdStrikeIntel, CrowdStrikeMalware
 import sys
 import os
 
@@ -419,3 +419,155 @@ def create_sample_crowdstrike_data():
             
     logger.info(f"Created {created_count} sample threat actors")
     return f"Created {created_count} sample threat actors"
+
+@shared_task
+def create_sample_crowdstrike_malware_data():
+    """
+    Create sample CrowdStrike malware family data for testing and development.
+    """
+    print("Starting to create sample CrowdStrike malware family data...")
+    
+    # Sample malware families data
+    malware_families = [
+        {
+            "malware_id": "mal1001",
+            "name": "BlackEnergy",
+            "description": "BlackEnergy is a malware toolkit that has been used in a variety of attacks, including the December 2015 Ukraine power grid attack. It has evolved substantially since its initial appearance in 2007.",
+            "ttps": ["Command and Control", "Credential Harvesting", "DDoS Capability"],
+            "targeted_industries": ["Energy", "Government", "Critical Infrastructure"],
+            "threat_groups": ["ELECTRUM", "SANDWORM TEAM"],
+            "publish_date": "2023-06-15T00:00:00Z",
+            "activity_start_date": "2007-01-01T00:00:00Z",
+            "activity_end_date": "2023-05-30T00:00:00Z",
+            "last_update_date": "2023-06-15T00:00:00Z"
+        },
+        {
+            "malware_id": "mal1002",
+            "name": "Conti Ransomware",
+            "description": "Conti is a ransomware variant that was first observed in 2020. It is operated as a Ransomware-as-a-Service (RaaS) model and has been involved in numerous high-profile attacks.",
+            "ttps": ["Data Exfiltration", "Encryption", "Double Extortion"],
+            "targeted_industries": ["Healthcare", "Government", "Education", "Financial Services"],
+            "threat_groups": ["WIZARD SPIDER"],
+            "publish_date": "2023-05-10T00:00:00Z",
+            "activity_start_date": "2020-02-01T00:00:00Z",
+            "activity_end_date": "2023-04-30T00:00:00Z",
+            "last_update_date": "2023-05-10T00:00:00Z"
+        },
+        {
+            "malware_id": "mal1003",
+            "name": "SUNBURST",
+            "description": "SUNBURST is a backdoor trojan that was deployed through compromised updates to SolarWinds' Orion software. It is believed to be part of a widespread espionage campaign.",
+            "ttps": ["Supply Chain Attack", "Command and Control", "Lateral Movement"],
+            "targeted_industries": ["Government", "Technology", "Consulting", "Telecommunications"],
+            "threat_groups": ["NOBELIUM", "UNC2452"],
+            "publish_date": "2023-07-05T00:00:00Z",
+            "activity_start_date": "2020-03-01T00:00:00Z",
+            "activity_end_date": "2021-01-31T00:00:00Z",
+            "last_update_date": "2023-07-05T00:00:00Z"
+        },
+        {
+            "malware_id": "mal1004",
+            "name": "EMOTET",
+            "description": "EMOTET is a modular banking trojan that functions primarily as a downloader for other malware. It has been active since 2014 and is notorious for its persistence and ability to evade detection.",
+            "ttps": ["Phishing", "Credential Harvesting", "Malware Distribution"],
+            "targeted_industries": ["Banking", "Finance", "Government", "Healthcare"],
+            "threat_groups": ["MUMMY SPIDER"],
+            "publish_date": "2023-04-20T00:00:00Z",
+            "activity_start_date": "2014-06-01T00:00:00Z",
+            "activity_end_date": "2023-03-31T00:00:00Z",
+            "last_update_date": "2023-04-20T00:00:00Z"
+        },
+        {
+            "malware_id": "mal1005",
+            "name": "DarkSide Ransomware",
+            "description": "DarkSide is a ransomware variant that operates under a Ransomware-as-a-Service model. It gained notoriety following its use in the attack against Colonial Pipeline in May 2021.",
+            "ttps": ["Data Exfiltration", "Encryption", "Double Extortion"],
+            "targeted_industries": ["Energy", "Critical Infrastructure", "Manufacturing", "Healthcare"],
+            "threat_groups": ["CARBON SPIDER"],
+            "publish_date": "2023-02-18T00:00:00Z",
+            "activity_start_date": "2020-08-01T00:00:00Z",
+            "activity_end_date": "2021-05-31T00:00:00Z",
+            "last_update_date": "2023-02-18T00:00:00Z"
+        },
+        {
+            "malware_id": "mal1006",
+            "name": "WannaCry",
+            "description": "WannaCry is a ransomware worm that spread rapidly in May 2017, targeting computers running Microsoft Windows by exploiting the EternalBlue vulnerability.",
+            "ttps": ["Encryption", "Worm Capability", "Exploit Kit"],
+            "targeted_industries": ["Healthcare", "Government", "Telecommunications", "Manufacturing"],
+            "threat_groups": ["LAZARUS GROUP"],
+            "publish_date": "2023-03-12T00:00:00Z",
+            "activity_start_date": "2017-05-12T00:00:00Z",
+            "activity_end_date": "2017-06-30T00:00:00Z",
+            "last_update_date": "2023-03-12T00:00:00Z"
+        },
+        {
+            "malware_id": "mal1007",
+            "name": "Trickbot",
+            "description": "Trickbot is a banking trojan that has evolved into a modular malware platform. It is often used as part of a larger attack chain, including ransomware deployment.",
+            "ttps": ["Banking Trojan", "Credential Harvesting", "Malware Distribution"],
+            "targeted_industries": ["Banking", "Finance", "Healthcare", "Education"],
+            "threat_groups": ["WIZARD SPIDER"],
+            "publish_date": "2023-01-25T00:00:00Z",
+            "activity_start_date": "2016-10-01T00:00:00Z",
+            "activity_end_date": "2022-12-31T00:00:00Z",
+            "last_update_date": "2023-01-25T00:00:00Z"
+        },
+        {
+            "malware_id": "mal1008",
+            "name": "Pegasus",
+            "description": "Pegasus is a spyware developed by the NSO Group that can be covertly installed on mobile devices. It is capable of extensive surveillance including reading text messages, tracking calls, and accessing the camera.",
+            "ttps": ["Zero-day Exploits", "Surveillance", "Data Exfiltration"],
+            "targeted_industries": ["Government", "Journalism", "Activism", "Legal"],
+            "threat_groups": ["Unknown"],
+            "publish_date": "2023-05-30T00:00:00Z",
+            "activity_start_date": "2016-01-01T00:00:00Z",
+            "activity_end_date": "2023-05-01T00:00:00Z",
+            "last_update_date": "2023-05-30T00:00:00Z"
+        },
+        {
+            "malware_id": "mal1009",
+            "name": "GandCrab",
+            "description": "GandCrab is a ransomware family that was distributed via exploit kits, phishing emails with malicious attachments, and remote desktop protocol (RDP) compromise.",
+            "ttps": ["Encryption", "Ransom Demand", "Exploit Kit"],
+            "targeted_industries": ["Healthcare", "Legal", "Finance", "Small Businesses"],
+            "threat_groups": ["PINCHY SPIDER"],
+            "publish_date": "2023-04-08T00:00:00Z",
+            "activity_start_date": "2018-01-01T00:00:00Z",
+            "activity_end_date": "2019-06-01T00:00:00Z",
+            "last_update_date": "2023-04-08T00:00:00Z"
+        },
+        {
+            "malware_id": "mal1010",
+            "name": "Ryuk",
+            "description": "Ryuk is a ransomware strain that targets large enterprises and is known for its high ransom demands. It is typically deployed after initial compromise through other malware such as TrickBot or BazarLoader.",
+            "ttps": ["Targeted Attacks", "Encryption", "High-Value Targeting"],
+            "targeted_industries": ["Healthcare", "Government", "Large Enterprises", "Finance"],
+            "threat_groups": ["WIZARD SPIDER"],
+            "publish_date": "2023-07-12T00:00:00Z",
+            "activity_start_date": "2018-08-01T00:00:00Z",
+            "activity_end_date": "2023-06-30T00:00:00Z",
+            "last_update_date": "2023-07-12T00:00:00Z"
+        }
+    ]
+    
+    created_count = 0
+    updated_count = 0
+    
+    for malware_data in malware_families:
+        try:
+            malware, created = CrowdStrikeMalware.objects.update_or_create(
+                malware_id=malware_data['malware_id'],
+                defaults=malware_data
+            )
+            if created:
+                created_count += 1
+                print(f"Created malware family: {malware_data['name']}")
+            else:
+                updated_count += 1
+                print(f"Updated malware family: {malware_data['name']}")
+        except Exception as e:
+            print(f"Error creating/updating malware family {malware_data.get('name', 'unknown')}: {str(e)}")
+    
+    print(f"Sample data creation complete. Created: {created_count}, Updated: {updated_count}")
+    return f"Created {created_count} and updated {updated_count} malware families."

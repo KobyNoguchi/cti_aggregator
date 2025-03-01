@@ -41,3 +41,18 @@ class CrowdStrikeIntel(models.Model):
     
     def __str__(self):
         return self.name
+
+class CrowdStrikeMalware(models.Model):
+    malware_id = models.CharField(max_length=255, primary_key=True)
+    name = models.CharField(max_length=255)
+    description = models.TextField(null=True, blank=True)
+    ttps = models.JSONField(null=True, blank=True)  # Tactics, Techniques, and Procedures
+    targeted_industries = models.JSONField(null=True, blank=True)
+    publish_date = models.DateTimeField(null=True, blank=True)
+    activity_start_date = models.DateTimeField(null=True, blank=True)
+    activity_end_date = models.DateTimeField(null=True, blank=True)
+    threat_groups = models.JSONField(null=True, blank=True)  # Associated threat groups/actors
+    last_update_date = models.DateTimeField(null=True, blank=True)
+    
+    def __str__(self):
+        return self.name
