@@ -1,0 +1,36 @@
+.ransomware-timeline-panel {
+  margin: 16px 0;
+}
+
+.timeline-container {
+  min-height: 500px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background-color: #f8f9fa;
+}
+
+.timeline-container svg {
+  display: block;
+  margin: 0 auto;
+}
+
+.dot {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dot:hover {
+  stroke-width: 2px;
+}
+
+.tooltip {
+  pointer-events: none;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .timeline-container {
+    min-height: 400px;
+    overflow-x: scroll;
+  }
+} 

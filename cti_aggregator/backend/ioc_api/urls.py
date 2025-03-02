@@ -4,7 +4,8 @@ from .views import (
     VulnerabilityViewSet, 
     IntelligenceArticleViewSet, 
     CrowdStrikeIntelViewSet,
-    CrowdStrikeMalwareViewSet
+    CrowdStrikeMalwareViewSet,
+    get_cira_data
 )
 
 router = DefaultRouter()
@@ -15,4 +16,5 @@ router.register(r'crowdstrike-malware', CrowdStrikeMalwareViewSet)
 
 urlpatterns = [
     path('api/', include(router.urls)),
+    path('cira-data/', get_cira_data, name='cira-data'),
 ]

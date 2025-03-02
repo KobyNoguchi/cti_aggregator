@@ -16,8 +16,17 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import include, path
+from django.conf import settings
+from django.conf.urls.static import static
+import os
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('ioc_api.urls')),
 ]
+
+# Add static file serving for development
+if settings.DEBUG:
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+    # Serve data files directly from data_sources directory
+    urlpatterns += static(settings.DATA_FILES_URL, document_root=os.path.join(settings.BASE_DIR, '..', 'data_sources'))

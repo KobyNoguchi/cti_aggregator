@@ -8,17 +8,23 @@
     "@emotion/react": "^11.11.1",
     "@emotion/styled": "^11.11.0",
     "@heroicons/react": "^2.0.18",
+    "@tailwindcss/vite": "^4.0.9",
     "@testing-library/jest-dom": "^5.17.0",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
+    "@types/d3": "^7.4.3",
     "axios": "^1.5.0",
+    "d3": "^7.9.0",
     "framer-motion": "^10.16.4",
     "react": "^18.2.0",
+    "react-csv-reader": "^4.0.0",
     "react-datepicker": "^8.1.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.15.0",
     "react-scripts": "^5.0.1",
-    "web-vitals": "^2.1.4"
+    "tailwindcss": "^4.0.9",
+    "web-vitals": "^2.1.4",
+    "xlsx": "^0.18.5"
   },
   "scripts": {
     "start": "react-app-rewired start",
@@ -47,5 +53,6 @@
   "devDependencies": {
     "customize-cra": "^1.0.0",
     "react-app-rewired": "^2.2.1"
-  }
+  },
+  "proxy": "http://localhost:8000"
 }
