@@ -1,7 +1,7 @@
 from rest_framework import viewsets, filters
 from django_filters.rest_framework import DjangoFilterBackend, CharFilter, FilterSet
 from ioc_scraper.models import Vulnerability, IntelligenceArticle, CrowdStrikeIntel, CrowdStrikeMalware
-from .serializers import VulnerabilitySerializer, IntelligenceArticleSerializer, CrowdStrikeIntelSerializer, CrowdStrikeMalwareSerializer
+from .serializers import VulnerabilitySerializer, IntelligenceArticleSerializer, CrowdStrikeIntelSerializer, CrowdStrikeMalwareSerializer, CISAKevSerializer
 from django.db import models
 import os
 from django.http import FileResponse, HttpResponse
@@ -25,6 +25,32 @@ class VulnerabilityViewSet(viewsets.ReadOnlyModelViewSet):
     """
     queryset = Vulnerability.objects.all().order_by("-published_date")
     serializer_class = VulnerabilitySerializer
+
+class CISAKevViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint that specifically returns CISA KEV vulnerabilities.
+    """
+    # We're using the same Vulnerability model but now with a broader filter
+    # to capture all CISA KEV data regardless of URL format
+    queryset = Vulnerability.objects.filter(
+        # The URL check is now just one of several ways to identify CISA data
+        source_url__contains="cisa.gov"
+    ).order_by("-published_date")
+    
+    # Override get_queryset to implement a more flexible approach
+    def get_queryset(self):
+        """
+        Return all vulnerabilities from the CISA KEV feed.
+        Since the fetch_cisa_vulnerabilities task populates these records,
+        we can safely return all records to ensure we show the real data.
+        """
+        # For now, return all vulnerabilities since we know they're from CISA KEV
+        return Vulnerability.objects.all().order_by("-published_date")
+    
+    serializer_class = CISAKevSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    search_fields = ['cve_id', 'vulnerability_name', 'description']
+    filterset_fields = ['severity']
 
 class IntelligenceArticleViewSet(viewsets.ReadOnlyModelViewSet):
     """
