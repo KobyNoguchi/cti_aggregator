@@ -1,11 +1,25 @@
 from rest_framework import viewsets, filters
 from django_filters.rest_framework import DjangoFilterBackend, CharFilter, FilterSet
 from ioc_scraper.models import Vulnerability, IntelligenceArticle, CrowdStrikeIntel, CrowdStrikeMalware
-from .serializers import VulnerabilitySerializer, IntelligenceArticleSerializer, CrowdStrikeIntelSerializer, CrowdStrikeMalwareSerializer, CISAKevSerializer
+from .serializers import (
+    VulnerabilitySerializer, 
+    IntelligenceArticleSerializer, 
+    CrowdStrikeIntelSerializer, 
+    CrowdStrikeMalwareSerializer, 
+    CISAKevSerializer
+)
 from django.db import models
 import os
-from django.http import FileResponse, HttpResponse
+import sys
+import hashlib
+import json
+import logging
+from django.http import FileResponse, HttpResponse, JsonResponse
 from django.conf import settings
+from django.db.models import Q
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Custom filterset class for handling JSONField
 class CustomFilterSet(FilterSet):
@@ -30,23 +44,31 @@ class CISAKevViewSet(viewsets.ReadOnlyModelViewSet):
     """
     API endpoint that specifically returns CISA KEV vulnerabilities.
     """
-    # We're using the same Vulnerability model but now with a broader filter
-    # to capture all CISA KEV data regardless of URL format
-    queryset = Vulnerability.objects.filter(
-        # The URL check is now just one of several ways to identify CISA data
-        source_url__contains="cisa.gov"
-    ).order_by("-published_date")
+    # Define a more comprehensive filter to identify CISA KEV vulnerabilities
+    # This approach uses multiple signals to identify vulnerabilities that came from CISA
+    queryset = Vulnerability.objects.all().order_by("-published_date")
     
-    # Override get_queryset to implement a more flexible approach
     def get_queryset(self):
         """
-        Return all vulnerabilities from the CISA KEV feed.
-        Since the fetch_cisa_vulnerabilities task populates these records,
-        we can safely return all records to ensure we show the real data.
+        Return vulnerabilities that match CISA KEV characteristics.
+        We use multiple filter criteria to identify CISA KEV data:
+        1. URLs containing cisa.gov (direct identification)
+        2. CVE IDs that follow the CVE-YYYY-NNNNN format
+        3. Vulnerabilities with the characteristics of CISA KEV data
         """
-        # For now, return all vulnerabilities since we know they're from CISA KEV
-        return Vulnerability.objects.all().order_by("-published_date")
-    
+        # Build a comprehensive filter
+        return Vulnerability.objects.filter(
+            # Either the URL contains cisa.gov
+            Q(source_url__contains="cisa.gov") |
+            # Or it has a well-formed CVE ID and looks like KEV data
+            (
+                Q(cve_id__regex=r'^CVE-\d{4}-\d+$') &
+                # Typically CISA KEV entries have these characteristics
+                ~Q(vulnerability_name="Unknown") &
+                ~Q(description="No description provided")
+            )
+        ).order_by("-published_date")
+        
     serializer_class = CISAKevSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = ['cve_id', 'vulnerability_name', 'description']
@@ -81,16 +103,38 @@ class CrowdStrikeIntelViewSet(viewsets.ReadOnlyModelViewSet):
 class CrowdStrikeMalwareViewSet(viewsets.ReadOnlyModelViewSet):
     """
     API endpoint that allows CrowdStrike malware families to be viewed.
+    Provides comprehensive data about malware families, their characteristics,
+    targeted industries, and associated threat groups.
     """
-    queryset = CrowdStrikeMalware.objects.all().order_by("-publish_date")
+    # Override get_queryset to provide more comprehensive filtering
+    def get_queryset(self):
+        """
+        Return CrowdStrike malware families with intelligent filtering.
+        We use multiple criteria to ensure we get high-quality, relevant data:
+        1. Filter by standard CrowdStrike attributes
+        2. Ensure we have proper data characteristics (name, description)
+        3. Sort by most recent publication date
+        """
+        return CrowdStrikeMalware.objects.filter(
+            # Ensure we have meaningful data
+            ~Q(name="") & 
+            ~Q(description="") &
+            # At least one of these fields should have meaningful content
+            (
+                ~Q(ttps=[]) | 
+                ~Q(targeted_industries=[]) | 
+                ~Q(threat_groups=[])
+            )
+        ).order_by("-publish_date")
+    
     serializer_class = CrowdStrikeMalwareSerializer
-    filterset_fields = ['name', 'threat_groups']  # Add back threat_groups
-    search_fields = ['name', 'description']
+    filterset_fields = ['name', 'threat_groups']
+    search_fields = ['name', 'description', 'targeted_industries', 'ttps']
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_class = type('CrowdStrikeMalwareFilterSet', (CustomFilterSet,), {
         'Meta': type('Meta', (), {
             'model': CrowdStrikeMalware,
-            'fields': ['name', 'threat_groups'],
+            'fields': ['name', 'threat_groups', 'targeted_industries'],
             'filter_overrides': CustomFilterSet.Meta.filter_overrides
         })
     })

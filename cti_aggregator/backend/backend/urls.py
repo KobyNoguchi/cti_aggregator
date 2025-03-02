@@ -23,6 +23,7 @@ import os
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('ioc_api.urls')),
+    path('api/', include('ioc_api.urls')),  # Add API prefix version of the same endpoints
 ]
 
 # Add static file serving for development

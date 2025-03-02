@@ -301,3 +301,28 @@ def fetch_crowdstrike_intel():
     except Exception as e:
         logger.error(f"Error fetching CrowdStrike intel: {str(e)}")
         return f"Error: {str(e)}"
+
+@shared_task
+def update_tailored_intelligence():
+    """
+    Celery task to update CrowdStrike Tailored Intelligence data.
+    This task runs the tailored_intelligence.py update function.
+    """
+    logger.info("Starting scheduled update of CrowdStrike Tailored Intelligence data")
+    
+    try:
+        # Add the data_sources directory to the Python path
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        data_sources_dir = os.path.join(project_root, 'data_sources')
+        if data_sources_dir not in sys.path:
+            sys.path.insert(0, data_sources_dir)
+        
+        # Import and run the update function
+        from data_sources.tailored_intelligence import run_update
+        result = run_update()
+        
+        logger.info(f"Completed scheduled update of Tailored Intelligence data: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"Error in scheduled update of Tailored Intelligence data: {str(e)}")
+        return {"status": "error", "message": str(e)}

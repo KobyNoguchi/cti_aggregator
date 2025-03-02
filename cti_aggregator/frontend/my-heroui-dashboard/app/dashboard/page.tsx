@@ -1,5 +1,5 @@
 import React from 'react';
-import { IntelligenceFeed, CISAKev } from '@/components/intel';
+import { IntelligenceFeed, CISAKev, CrowdStrikeMalware } from '@/components/intel';
 
 export default function DashboardPage() {
   return (
@@ -12,6 +12,14 @@ export default function DashboardPage() {
           <h2 className="text-xl font-semibold mb-4 dark:text-white">Intelligence Feed</h2>
           <div className="h-[500px]">
             <IntelligenceFeed />
+          </div>
+        </div>
+        
+        {/* CrowdStrike Malware Section */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+          <h2 className="text-xl font-semibold mb-4 dark:text-white">CrowdStrike Malware Families</h2>
+          <div className="h-[500px]">
+            <CrowdStrikeMalware />
           </div>
         </div>
         

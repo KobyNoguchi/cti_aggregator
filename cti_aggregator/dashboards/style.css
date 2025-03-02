@@ -1,0 +1,114 @@
+/* Custom styles for the Malware Family Dashboard */
+
+/* Main page background and text */
+.main {
+    background-color: #f0f2f6;
+}
+
+/* Make the sidebar more distinctive */
+.sidebar .sidebar-content {
+    background-color: #262730;
+}
+
+/* Style for headers */
+h1, h2, h3 {
+    color: #ff5722;
+    font-weight: bold;
+}
+h1 {
+    border-bottom: 2px solid #ff5722;
+    padding-bottom: 10px;
+}
+
+/* Custom styling for the dataframe */
+.dataframe-container {
+    border-radius: 5px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+}
+
+/* Custom styling for expanders */
+.streamlit-expanderContent {
+    background-color: #ffffff;
+    border-radius: 0 0 5px 5px;
+    border: 1px solid #e6e6e6;
+    border-top: none;
+    padding: 15px;
+}
+
+/* Custom styling for tabs */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 10px;
+}
+
+.stTabs [data-baseweb="tab"] {
+    height: 50px;
+    white-space: pre-wrap;
+    border-radius: 5px 5px 0 0;
+    border: 1px solid #e6e6e6;
+    border-bottom: none;
+}
+
+.stTabs [aria-selected="true"] {
+    background-color: #ff5722;
+    color: white;
+}
+
+/* Style for alert boxes */
+.stAlert {
+    border-radius: 5px;
+}
+
+/* Custom styling for the threat information */
+.threat-data {
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-radius: 5px;
+    border-left: 3px solid #ff5722;
+    margin-bottom: 10px;
+}
+
+/* Style for MITRE ATT&CK techniques */
+.mitre-technique {
+    background-color: #e9ecef;
+    padding: 5px 10px;
+    border-radius: 3px;
+    margin-right: 5px;
+    margin-bottom: 5px;
+    display: inline-block;
+    font-family: monospace;
+}
+
+/* Style for targeted countries and sectors */
+.target-item {
+    background-color: #e7f5ff;
+    padding: 5px 10px;
+    border-radius: 3px;
+    margin-right: 5px;
+    margin-bottom: 5px;
+    display: inline-block;
+}
+
+/* Style for threat groups and nation affiliations */
+.affiliation-item {
+    background-color: #fff3bf;
+    padding: 5px 10px;
+    border-radius: 3px;
+    margin-right: 5px;
+    margin-bottom: 5px;
+    display: inline-block;
+}
+
+/* Custom button styling */
+.stButton>button {
+    background-color: #ff5722;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    padding: 10px 15px;
+    font-weight: bold;
+}
+
+.stButton>button:hover {
+    background-color: #e64a19;
+} 

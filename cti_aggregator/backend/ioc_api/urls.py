@@ -13,10 +13,10 @@ router = DefaultRouter()
 router.register(r'vulnerabilities', VulnerabilityViewSet)
 router.register(r'intelligence', IntelligenceArticleViewSet)
 router.register(r'crowdstrike-intel', CrowdStrikeIntelViewSet)
-router.register(r'crowdstrike-malware', CrowdStrikeMalwareViewSet)
+router.register(r'crowdstrike/malware', CrowdStrikeMalwareViewSet, basename='crowdstrike-malware')
 router.register(r'cisa/kev', CISAKevViewSet, basename='cisa-kev')
 
 urlpatterns = [
-    path('api/', include(router.urls)),
+    path('', include(router.urls)),
     path('cira-data/', get_cira_data, name='cira-data'),
 ]

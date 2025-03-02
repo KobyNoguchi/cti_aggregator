@@ -56,3 +56,25 @@ class CrowdStrikeMalware(models.Model):
     
     def __str__(self):
         return self.name
+
+class CISAKev(models.Model):
+    """
+    Model for CISA Known Exploited Vulnerabilities.
+    """
+    cve_id = models.CharField(max_length=50, unique=True)
+    vulnerability_name = models.CharField(max_length=500)
+    description = models.TextField()
+    date_added = models.DateField()
+    due_date = models.DateField()
+    vendor_project = models.CharField(max_length=255)
+    product = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "CISA Known Exploited Vulnerability"
+        verbose_name_plural = "CISA Known Exploited Vulnerabilities"
+        ordering = ['-date_added']
+
+    def __str__(self):
+        return f"{self.cve_id} - {self.vulnerability_name}"
