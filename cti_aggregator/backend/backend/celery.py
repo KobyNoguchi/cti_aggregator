@@ -18,9 +18,9 @@ app.conf.beat_schedule={
         "task": "ioc_scraper.tasks.fetch_cisa_vulnerabilities",
         "schedule": crontab(hour=0, minute=0),
     },
-    "fetch-intelligence-articles-daily": {
+    "fetch-intelligence-articles-hourly": {
         "task": "ioc_scraper.tasks.fetch_all_intelligence",
-        "schedule": crontab(hour=1, minute=0),  # Run at 1 AM to avoid conflicts
+        "schedule": crontab(minute=0),  # Run every hour at minute 0
     },
     'fetch-crowdstrike-intel-every-hour': {
         'task': 'ioc_scraper.tasks.fetch_crowdstrike_intel',

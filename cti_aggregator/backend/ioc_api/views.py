@@ -17,6 +17,9 @@ import logging
 from django.http import FileResponse, HttpResponse, JsonResponse
 from django.conf import settings
 from django.db.models import Q
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from ioc_scraper.tasks import fetch_all_intelligence
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -156,5 +159,67 @@ def get_cira_data(request):
             return response
     else:
         return HttpResponse(status=404, content="CIRA data file not found.")
+
+@api_view(['POST'])
+@permission_classes([AllowAny])  # Consider requiring authentication in production
+def refresh_intelligence(request):
+    """
+    Endpoint to manually trigger intelligence feed refresh
+    """
+    try:
+        # Run the task synchronously for immediate feedback
+        result = fetch_all_intelligence.delay()
+        
+        return JsonResponse({
+            "status": "success",
+            "message": "Intelligence refresh task started",
+            "task_id": result.id
+        })
+    except Exception as e:
+        logger.error(f"Error starting intelligence refresh: {str(e)}")
+        return JsonResponse({
+            "status": "error",
+            "message": f"Failed to start intelligence refresh: {str(e)}"
+        }, status=500)
+
+def threat_intelligence_feed(request):
+    """
+    Endpoint to display intelligence feed in a browser-friendly format.
+    This is useful for debugging the backend data.
+    """
+    articles = IntelligenceArticle.objects.all().order_by('-published_date')
+    
+    # Group articles by source
+    sources = articles.values_list('source', flat=True).distinct()
+    articles_by_source = {}
+    for source in sources:
+        articles_by_source[source] = list(articles.filter(source=source).values('id', 'title', 'url', 'published_date', 'summary'))
+    
+    # Create a simple HTML response
+    html = "<html><head><title>Threat Intelligence Feed</title>"
+    html += "<style>"
+    html += "body { font-family: Arial, sans-serif; margin: 20px; }"
+    html += "h1 { color: #333; }"
+    html += "h2 { color: #444; background-color: #f5f5f5; padding: 10px; margin-top: 30px; }"
+    html += ".article { margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 15px; }"
+    html += ".article h3 { margin: 0 0 5px 0; }"
+    html += ".article .meta { color: #666; font-size: 0.8em; margin-bottom: 8px; }"
+    html += ".article .summary { font-size: 0.9em; }"
+    html += "</style></head><body>"
+    html += "<h1>Threat Intelligence Feed</h1>"
+    html += f"<p>Total articles: {articles.count()}</p>"
+    
+    for source, source_articles in articles_by_source.items():
+        html += f"<h2>{source} ({len(source_articles)} articles)</h2>"
+        for article in source_articles:
+            published_date = article['published_date'].strftime('%Y-%m-%d %H:%M:%S') if article['published_date'] else 'Unknown'
+            html += f"<div class='article'>"
+            html += f"<h3><a href='{article['url']}' target='_blank'>{article['title']}</a></h3>"
+            html += f"<div class='meta'>Published: {published_date} | ID: {article['id']}</div>"
+            html += f"<div class='summary'>{article['summary']}</div>"
+            html += "</div>"
+    
+    html += "</body></html>"
+    return HttpResponse(html)
 
 # Create your views here.

@@ -11,6 +11,13 @@ falconpy>=1.2.0
 beautifulsoup4>=4.12.2
 requests>=2.31.0
 
+# Scraping and proxy handling
+lxml>=4.9.2
+soupsieve>=2.4.0
+requests-futures>=1.0.1
+concurrent-log-handler>=0.9.20
+selenium>=4.8.0  # Optional for headless browser fallback
+
 # Data processing and visualization
 pandas>=1.5.0
 matplotlib>=3.6.0
