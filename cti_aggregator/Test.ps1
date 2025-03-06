@@ -83,16 +83,31 @@ Start-Process -NoNewWindow -FilePath "powershell" -ArgumentList "cd backend; cel
 Write-Output "Scheduling periodic Tailored Intelligence updates..."
 # Note: Make sure your Celery Beat schedule includes the Tailored Intelligence update task
 
-# Start HeroUI Dashboard
-Write-Output "Starting HeroUI Dashboard..."
-Start-Process -NoNewWindow -FilePath "powershell" -ArgumentList "cd frontend/my-heroui-dashboard; npm run dev"
+# Stop any existing frontend applications
+Write-Output "Stopping any existing dashboard instances..."
+$nodeProcesses = Get-Process | Where-Object { $_.ProcessName -eq "node" -and $_.Path -eq "C:\Program Files\nodejs\node.exe" }
+foreach ($process in $nodeProcesses) {
+    try {
+        Stop-Process -Id $process.Id -Force
+        Write-Output "Stopped process with ID $($process.Id)"
+    } catch {
+        Write-Output "Failed to stop process with ID $($process.Id): $_"
+    }
+}
+
+# Clear browser cache for localhost:3000
+Write-Output "It's recommended to clear your browser cache or use incognito mode"
+
+# Start CTI Dashboard (shadcn-based)
+Write-Output "Starting CTI Dashboard with shadcn components..."
+Start-Process -NoNewWindow -FilePath "powershell" -ArgumentList "cd frontend/cti-dashboard; npm run dev"
 
 # Open the dashboard in the default browser
 Write-Output "Opening dashboard in browser..."
 Start-Sleep -Seconds 5  # Give the server a moment to start
-Start-Process "http://localhost:3000/dashboard"
+Start-Process "http://localhost:3000"
 
 Write-Output "All services have been started!"
-Write-Output "HeroUI Dashboard available at: http://localhost:3000/dashboard"
+Write-Output "CTI Dashboard available at: http://localhost:3000"
 Write-Output "Backend API available at: http://localhost:8000"
 Write-Output "Tailored Intelligence module is active and data has been loaded"
