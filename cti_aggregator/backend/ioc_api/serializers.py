@@ -104,11 +104,17 @@ class CrowdStrikeTailoredIntelSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'publish_date', 'last_updated', 'summary', 'url', 'threat_groups', 'targeted_sectors']
     
     def get_threat_groups(self, obj):
-        if obj.threat_groups:
-            return obj.threat_groups.split(',')
+        # Prefer JSON field if available, fall back to text field for backward compatibility
+        if obj.threat_groups_json:
+            return obj.threat_groups_json
+        elif obj.threat_groups:
+            return [group.strip() for group in obj.threat_groups.split(',') if group.strip()]
         return []
     
     def get_targeted_sectors(self, obj):
-        if obj.targeted_sectors:
-            return obj.targeted_sectors.split(',')
+        # Prefer JSON field if available, fall back to text field for backward compatibility
+        if obj.targeted_sectors_json:
+            return obj.targeted_sectors_json
+        elif obj.targeted_sectors:
+            return [sector.strip() for sector in obj.targeted_sectors.split(',') if sector.strip()]
         return []

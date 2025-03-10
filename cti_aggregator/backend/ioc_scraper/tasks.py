@@ -1,6 +1,6 @@
 import requests
 from .models import Vulnerability, IntelligenceArticle
-from celery import shared_task
+from celery import shared_task, group
 from datetime import datetime 
 from bs4 import BeautifulSoup
 import logging
@@ -66,24 +66,33 @@ def fetch_cisa_vulnerabilities():
 
 @shared_task
 def fetch_all_intelligence():
-    """Fetch intelligence articles from all sources"""
-    results = []
-    results.append(fetch_cisco_talos_intelligence())
-    results.append(fetch_microsoft_intelligence())
-    results.append(fetch_mandiant_intelligence())
-    results.append(fetch_unit42_intelligence())
-    results.append(fetch_zscaler_intelligence())
-    results.append(fetch_orange_defense_intelligence())
-    results.append(fetch_mitre_intelligence())
+    """Fetch intelligence articles from all sources in parallel"""
+    # Create a list of task signatures to execute in parallel
+    scraper_tasks = [
+        fetch_cisco_talos_intelligence.s(),
+        fetch_microsoft_intelligence.s(),
+        fetch_mandiant_intelligence.s(),
+        fetch_unit42_intelligence.s(),
+        fetch_zscaler_intelligence.s(),
+        fetch_orange_defense_intelligence.s(),
+        fetch_mitre_intelligence.s(),
+        fetch_google_tag_intelligence.s(),
+    ]
     
-    # Use enhanced scraper for Dark Reading if available
+    # Add the appropriate dark reading scraper based on availability
     if ENHANCED_SCRAPER_AVAILABLE:
-        results.append(fetch_dark_reading_enhanced())
+        scraper_tasks.append(fetch_dark_reading_enhanced.s())
     else:
-        results.append(fetch_dark_reading_intelligence())
+        scraper_tasks.append(fetch_dark_reading_intelligence.s())
     
-    results.append(fetch_google_tag_intelligence())
-    return f"Completed fetching intelligence from all sources: {', '.join(results)}"
+    # Execute all scraper tasks in parallel using Celery's group functionality
+    job = group(scraper_tasks)
+    result = job.apply_async()
+    
+    # Wait for all tasks to complete and get their results
+    task_results = result.get()
+    
+    return f"Completed fetching intelligence from all sources in parallel: {', '.join(task_results)}"
 
 @shared_task
 def fetch_cisco_talos_intelligence():

@@ -534,8 +534,12 @@ def save_to_database(reports: List[Dict]) -> Tuple[int, int]:
                     'last_updated': report['last_updated'],
                     'summary': report['summary'],
                     'report_url': report.get('url', ''),
+                    # Keep updating the old text fields for backward compatibility
                     'threat_groups': ','.join(report['threat_groups']) if report.get('threat_groups') else '',
                     'targeted_sectors': ','.join(report['targeted_sectors']) if report.get('targeted_sectors') else '',
+                    # Update the new JSON fields
+                    'threat_groups_json': report['threat_groups'] if report.get('threat_groups') else [],
+                    'targeted_sectors_json': report['targeted_sectors'] if report.get('targeted_sectors') else [],
                 }
             )
             
@@ -560,6 +564,10 @@ def load_from_database() -> List[Dict]:
         db_reports = CrowdStrikeTailoredIntel.objects.all().order_by('-publish_date')
         
         for report in db_reports:
+            # Prefer JSON fields if available, otherwise fall back to text fields
+            threat_groups = report.threat_groups_json if report.threat_groups_json else (report.threat_groups.split(",") if report.threat_groups else [])
+            targeted_sectors = report.targeted_sectors_json if report.targeted_sectors_json else (report.targeted_sectors.split(",") if report.targeted_sectors else [])
+            
             reports.append({
                 "id": report.report_id,
                 "name": report.title,
@@ -567,8 +575,8 @@ def load_from_database() -> List[Dict]:
                 "last_updated": report.last_updated.strftime("%Y-%m-%d") if hasattr(report.last_updated, 'strftime') else report.last_updated,
                 "summary": report.summary,
                 "url": report.report_url,
-                "threat_groups": report.threat_groups.split(",") if report.threat_groups else [],
-                "targeted_sectors": report.targeted_sectors.split(",") if report.targeted_sectors else [],
+                "threat_groups": threat_groups,
+                "targeted_sectors": targeted_sectors,
             })
         
         logger.info(f"Loaded {len(reports)} reports from database")

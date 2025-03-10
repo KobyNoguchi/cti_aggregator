@@ -47,6 +47,64 @@ def get_random_user_agent() -> str:
     """Return a random user agent from the list."""
     return random.choice(USER_AGENTS)
 
+# Create a proxy health tracking system
+class ProxyHealthTracker:
+    """
+    Tracks the health and reliability of proxies to optimize proxy selection.
+    """
+    def __init__(self, max_failures: int = 3, recovery_time: int = 300):
+        self.proxy_failures: Dict[str, int] = {}  # Count of failures per proxy
+        self.blacklisted_proxies: Dict[str, float] = {}  # Blacklisted proxies with timestamp
+        self.max_failures = max_failures  # Max failures before blacklisting
+        self.recovery_time = recovery_time  # Time in seconds before a proxy can be tried again
+        self.logger = logging.getLogger(__name__)
+    
+    def record_success(self, proxy: str) -> None:
+        """Record a successful request through a proxy"""
+        if proxy in self.proxy_failures:
+            self.proxy_failures.pop(proxy)  # Reset failure count on success
+            self.logger.debug(f"Proxy {proxy} succeeded, reset failure count")
+    
+    def record_failure(self, proxy: str) -> None:
+        """Record a failed request through a proxy"""
+        if proxy not in self.proxy_failures:
+            self.proxy_failures[proxy] = 1
+        else:
+            self.proxy_failures[proxy] += 1
+            
+        # Check if we should blacklist the proxy
+        if self.proxy_failures[proxy] >= self.max_failures:
+            self.blacklist_proxy(proxy)
+    
+    def blacklist_proxy(self, proxy: str) -> None:
+        """Blacklist a proxy temporarily"""
+        self.blacklisted_proxies[proxy] = time.time()
+        if proxy in self.proxy_failures:
+            self.proxy_failures.pop(proxy)
+        self.logger.info(f"Blacklisted proxy {proxy} for {self.recovery_time} seconds")
+    
+    def is_blacklisted(self, proxy: str) -> bool:
+        """Check if a proxy is currently blacklisted"""
+        if proxy not in self.blacklisted_proxies:
+            return False
+            
+        # Check if blacklist period has expired
+        blacklist_time = self.blacklisted_proxies[proxy]
+        if time.time() - blacklist_time > self.recovery_time:
+            # Proxy has served its time, remove from blacklist
+            self.blacklisted_proxies.pop(proxy)
+            self.logger.debug(f"Proxy {proxy} removed from blacklist")
+            return False
+            
+        return True
+    
+    def get_healthy_proxies(self, all_proxies: List[str]) -> List[str]:
+        """Filter out blacklisted proxies from a list"""
+        return [p for p in all_proxies if not self.is_blacklisted(p)]
+
+# Initialize the proxy health tracker
+proxy_health_tracker = ProxyHealthTracker()
+
 class FreeEnhancedScraper:
     """Enhanced web scraper using free proxies."""
     
@@ -79,15 +137,15 @@ class FreeEnhancedScraper:
     def get(self, url: str, headers: Optional[Dict[str, str]] = None, 
             params: Optional[Dict[str, Any]] = None) -> requests.Response:
         """
-        Make a GET request using optimal settings.
+        Make a GET request using optimal proxy selection.
         
         Args:
             url: URL to request
-            headers: Optional headers to include
+            headers: Optional headers dictionary
             params: Optional query parameters
             
         Returns:
-            Response object from the request
+            Response object from request
         """
         if headers is None:
             headers = {}
@@ -96,64 +154,108 @@ class FreeEnhancedScraper:
         if 'User-Agent' not in headers:
             headers['User-Agent'] = get_random_user_agent()
             
-        if self.use_proxies:
-            # Use our proxy manager's get function
-            return get(url, headers, params, self.max_retries, self.timeout)
-        else:
-            # Direct request without proxies, but still with retries
-            last_error = None
+        # Get available proxies
+        available_proxies = proxy_manager.get_proxies()
+        
+        # Filter out blacklisted proxies
+        healthy_proxies = proxy_health_tracker.get_healthy_proxies(available_proxies)
+        
+        if not healthy_proxies:
+            # If all proxies are blacklisted, try a direct request
+            logger.warning("All proxies are currently blacklisted, making direct request")
+            try:
+                response = requests.get(url, headers=headers, params=params, timeout=self.timeout)
+                return response
+            except Exception as e:
+                logger.error(f"Direct request failed: {str(e)}")
+                error_response = requests.Response()
+                error_response.status_code = 500
+                error_response._content = b'{"error": "All proxies unavailable"}'
+                error_response.url = url
+                return error_response
+        
+        # Try proxies in random order to distribute load
+        random.shuffle(healthy_proxies)
+        
+        last_error = None
+        attempted_proxies = set()
+        
+        for attempt in range(self.max_retries):
+            # Select a proxy
+            if not healthy_proxies:
+                logger.warning("No more healthy proxies available")
+                break
             
-            for attempt in range(self.max_retries):
-                try:
-                    response = requests.get(
-                        url, 
-                        headers=headers, 
-                        params=params, 
-                        timeout=self.timeout
-                    )
-                    
-                    # Check if we got a valid response
-                    if response.status_code < 400:
-                        return response
-                        
-                    # Handle specific status codes
-                    if response.status_code == 403 or response.status_code == 429:
-                        logger.warning(f"Request blocked with status code {response.status_code}")
-                        # Wait before retrying
-                        wait_time = self.retry_delay * (2 ** attempt)  # Exponential backoff
-                        time.sleep(wait_time)
-                        continue
+            proxy = healthy_proxies.pop(0)
+            attempted_proxies.add(proxy)
+            
+            try:
+                logger.debug(f"Attempt {attempt+1} using proxy {proxy}")
+                proxies = {"http": proxy, "https": proxy}
                 
-                except Timeout as e:
-                    logger.warning(f"Request timeout: {str(e)}")
-                    last_error = e
+                response = requests.get(
+                    url, 
+                    headers=headers, 
+                    params=params, 
+                    proxies=proxies,
+                    timeout=self.timeout
+                )
+                
+                # Record successful proxy use
+                proxy_health_tracker.record_success(proxy)
+                
+                # Check if we got a valid response
+                if response.status_code < 400:
+                    return response
                     
-                except RequestException as e:
-                    logger.warning(f"Request failed: {str(e)}")
-                    last_error = e
+                # Handle specific error codes for this proxy
+                if response.status_code in [403, 429]:
+                    logger.warning(f"Proxy {proxy} returned status code {response.status_code}")
+                    proxy_health_tracker.record_failure(proxy)
+                    continue
                     
-                except Exception as e:
-                    logger.error(f"Unexpected error: {str(e)}")
-                    last_error = e
-                    
-                # Wait before retrying
-                wait_time = self.retry_delay * (2 ** attempt)  # Exponential backoff
-                time.sleep(wait_time)
-            
-            # All retries failed, create a simple error response
-            logger.error(f"All {self.max_retries} attempts failed when requesting {url}")
-            
-            # Create a simple error response to maintain a consistent interface
-            error_response = requests.Response()
-            error_response.status_code = 404
-            error_response._content = b'{"error": "404 Not Found", "message": "The requested resource could not be reached"}'
-            error_response.url = url
-            
-            # Attach the last error to the response
-            if last_error:
-                error_response.error = last_error
-            
-            return error_response
+            except ProxyError as e:
+                logger.warning(f"Proxy error with {proxy}: {str(e)}")
+                proxy_health_tracker.record_failure(proxy)
+                last_error = e
+                
+            except Timeout as e:
+                logger.warning(f"Timeout with proxy {proxy}: {str(e)}")
+                proxy_health_tracker.record_failure(proxy)
+                last_error = e
+                
+            except RequestException as e:
+                logger.warning(f"Request error with proxy {proxy}: {str(e)}")
+                proxy_health_tracker.record_failure(proxy)
+                last_error = e
+                
+            except Exception as e:
+                logger.error(f"Unexpected error with proxy {proxy}: {str(e)}")
+                proxy_health_tracker.record_failure(proxy)
+                last_error = e
+        
+        # If we've tried all proxies and none worked, try again with any healthy proxies
+        healthy_proxies = [p for p in proxy_manager.get_proxies() if p not in attempted_proxies and not proxy_health_tracker.is_blacklisted(p)]
+        
+        if healthy_proxies and len(attempted_proxies) < len(proxy_manager.get_proxies()):
+            logger.info(f"Trying with {len(healthy_proxies)} additional proxies")
+            # Recursively try again with remaining proxies, but one fewer retry to prevent deep recursion
+            return get(url, headers, params, max(1, self.max_retries - 1), self.timeout)
+        
+        # All retries failed, create a simple error response
+        logger.error(f"All {self.max_retries} attempts with {len(attempted_proxies)} proxies failed when requesting {url}")
+        
+        # Create a simple error response to maintain a consistent interface
+        error_response = requests.Response()
+        error_response.status_code = 404
+        error_response._content = b'{"error": "404 Not Found", "message": "The requested resource could not be reached"}'
+        error_response.url = url
+        
+        # Attach the last error to the response
+        if last_error:
+            error_response.error = last_error
+        
+        return error_response
     
     def get_soup(self, url: str, headers: Optional[Dict[str, str]] = None, 
                 params: Optional[Dict[str, Any]] = None) -> Optional[BeautifulSoup]:

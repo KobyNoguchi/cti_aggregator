@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from 'react'
-import { fetchCrowdStrikeTailoredIntel, CrowdStrikeTailoredIntel } from '@/lib/api'
+import { fetchCrowdStrikeTailoredIntel, CrowdStrikeTailoredIntel, isErrorResponse, ApiErrorResponse, clearCache } from '@/lib/api'
 import { format } from 'date-fns'
 import {
   Table,
@@ -38,15 +38,16 @@ export default function CrowdStrikeTailoredIntelTable() {
   const [reportTypes, setReportTypes] = useState<string[]>([]);
   const [severityLevels, setSeverityLevels] = useState<string[]>([]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Fetch data on component mount
   useEffect(() => {
-    fetchData();
+    fetchData(false);
     
-    // Set up hourly refresh
+    // Set up periodic refresh (every 15 minutes)
     const intervalId = setInterval(() => {
-      fetchData();
-    }, 60 * 60 * 1000); // 1 hour in milliseconds
+      fetchData(false);
+    }, 15 * 60 * 1000); // 15 minutes in milliseconds
     
     // Clean up interval on component unmount
     return () => clearInterval(intervalId);
@@ -58,43 +59,57 @@ export default function CrowdStrikeTailoredIntelTable() {
   }, [searchTerm, selectedReportType, selectedSeverity, intelReports]);
 
   // Fetch data from the API
-  const fetchData = async () => {
+  const fetchData = async (forceRefresh: boolean = false) => {
     try {
       setLoading(true);
-      const data = await fetchCrowdStrikeTailoredIntel();
+      if (forceRefresh) {
+        setIsRefreshing(true);
+      }
+      setError(null);
       
+      const response = await fetchCrowdStrikeTailoredIntel(forceRefresh);
+      
+      // Check if the response is an error
+      if (isErrorResponse(response)) {
+        setError(response.message);
+        setIntelReports([]);
+        console.error('Error fetching tailored intelligence:', response);
+        return;
+      }
+      
+      // If we reach here, the response is a successful array of data
       // Map the API response to the expected format
-      const formattedData = data.map(item => ({
+      const formattedData = response.map((item: CrowdStrikeTailoredIntel) => ({
         ...item,
         title: item.name,
         report_type: 'Intelligence Report', 
-        target_sectors: item.targeted_sectors || [],
-        target_countries: [], 
-        malware_families: [], 
-        tags: [], 
-        published_date: item.publish_date,
-        confidence_level: 'Medium', 
+        // Extract threat actor information from summary if available
+        report_url: item.url,
+        // Extract target countries from summary if available
+        target_countries: item.targeted_sectors.map((sector: string) => 
+          sector.includes("Geography:") ? sector.replace("Geography:", "").trim() : ""
+        ).filter(Boolean),
+        // Default values for filtering
+        confidence_level: 'High',
         severity_level: 'Medium', 
-        report_url: item.url
       }));
       
+      // Extract unique report types and severity levels for filters
+      const reportTypeSet = [...new Set(formattedData.map(item => item.report_type || '').filter(Boolean))];
+      const severitySet = [...new Set(formattedData.map(item => item.severity_level || '').filter(Boolean))];
+      
+      setReportTypes(reportTypeSet);
+      setSeverityLevels(severitySet);
+      
       setIntelReports(formattedData);
-      
-      // Extract unique report types for filter dropdown
-      const uniqueReportTypes = [...new Set(formattedData.map(report => report.report_type || ''))].filter(Boolean).sort();
-      setReportTypes(uniqueReportTypes as string[]);
-      
-      // Extract unique severity levels for filter dropdown
-      const uniqueSeverityLevels = [...new Set(formattedData.map(report => report.severity_level || ''))].filter(Boolean).sort();
-      setSeverityLevels(uniqueSeverityLevels as string[]);
-      
-      setError(null);
     } catch (err) {
-      setError('Failed to fetch CrowdStrike Tailored Intelligence data. Please check that the API credentials are properly configured in the backend .env file.');
-      console.error(err);
-      setIntelReports([]);
+      console.error('Unexpected error fetching tailored intelligence:', err);
+      setError('An unexpected error occurred while fetching data. Please try again later.');
     } finally {
       setLoading(false);
+      if (forceRefresh) {
+        setIsRefreshing(false);
+      }
     }
   };
 
@@ -206,9 +221,10 @@ export default function CrowdStrikeTailoredIntelTable() {
             <Button 
               variant="outline" 
               size="icon" 
-              onClick={fetchData} 
+              onClick={() => fetchData(true)} 
+              disabled={isRefreshing || loading}
             >
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
             </Button>
           </div>
         </div>
