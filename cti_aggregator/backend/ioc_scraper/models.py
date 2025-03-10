@@ -78,3 +78,23 @@ class CISAKev(models.Model):
 
     def __str__(self):
         return f"{self.cve_id} - {self.vulnerability_name}"
+
+class CrowdStrikeTailoredIntel(models.Model):
+    """
+    Model for CrowdStrike Tailored Intelligence reports.
+    """
+    report_id = models.CharField(max_length=255, primary_key=True)
+    title = models.CharField(max_length=255)
+    publish_date = models.DateTimeField(null=True, blank=True)
+    last_updated = models.DateTimeField(null=True, blank=True)
+    summary = models.TextField(null=True, blank=True)
+    report_url = models.URLField(max_length=500, null=True, blank=True)
+    threat_groups = models.TextField(null=True, blank=True)  # Comma-separated list
+    targeted_sectors = models.TextField(null=True, blank=True)  # Comma-separated list
+    
+    class Meta:
+        verbose_name = "CrowdStrike Tailored Intel"
+        verbose_name_plural = "CrowdStrike Tailored Intel"
+    
+    def __str__(self):
+        return self.title

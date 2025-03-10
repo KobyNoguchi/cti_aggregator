@@ -49,19 +49,24 @@ export interface CrowdStrikeActor {
 
 export interface CrowdStrikeTailoredIntel {
   id: string;
-  title: string;
+  name: string;
   summary: string | null;
-  report_type: string;
-  target_sectors: string[];
-  target_countries: string[];
-  threat_groups: string[];
-  malware_families: string[];
-  tags: string[];
-  published_date: string;
+  publish_date: string;
   last_updated: string;
-  confidence_level: string;
-  severity_level: string;
-  report_url: string | null;
+  url: string | null;
+  threat_groups: string[];
+  targeted_sectors: string[];
+  // Frontend-only fields
+  title?: string;
+  report_type?: string;
+  target_sectors?: string[];
+  target_countries?: string[];
+  malware_families?: string[];
+  tags?: string[];
+  published_date?: string;
+  confidence_level?: string;
+  severity_level?: string;
+  report_url?: string | null;
 }
 
 export interface CrowdStrikeIndicator {
@@ -224,8 +229,21 @@ export async function fetchCrowdStrikeIndicators(): Promise<CrowdStrikeIndicator
     return data;
   } catch (error) {
     console.error('Error fetching CrowdStrike indicators:', error);
-    // Return mock data for now
-    return generateMockIndicators(15);
+    // Return error object instead of mock data
+    return [{ 
+      id: 'error',
+      indicator_value: '404 Not Found',
+      indicator_type: 'Error',
+      description: 'Could not retrieve indicators from the server',
+      malware_families: [],
+      threat_groups: [],
+      confidence_level: 'N/A',
+      severity_level: 'N/A',
+      published_date: new Date().toISOString(),
+      last_updated: new Date().toISOString(),
+      expiration_date: null,
+      tags: []
+    }];
   }
 }
 
@@ -244,8 +262,22 @@ export async function fetchCrowdStrikeRules(): Promise<CrowdStrikeRule[]> {
     return data;
   } catch (error) {
     console.error('Error fetching CrowdStrike rules:', error);
-    // Return mock data for now
-    return generateMockRules(15);
+    // Return error object instead of mock data
+    return [{
+      id: 'error',
+      name: '404 Not Found',
+      description: 'Could not retrieve rules from the server',
+      rule_type: 'Error',
+      rule_content: 'No content available',
+      mitre_techniques: [],
+      malware_families: [],
+      threat_groups: [],
+      confidence_level: 'N/A',
+      severity_level: 'N/A',
+      published_date: new Date().toISOString(),
+      last_updated: new Date().toISOString(),
+      tags: []
+    }];
   }
 }
 
@@ -264,8 +296,22 @@ export async function fetchCrowdStrikeVulnerabilities(): Promise<CrowdStrikeVuln
     return data;
   } catch (error) {
     console.error('Error fetching CrowdStrike vulnerabilities:', error);
-    // Return mock data for now
-    return generateMockVulnerabilities(15);
+    // Return error object instead of mock data
+    return [{
+      id: 'error',
+      cve_id: '404 Not Found',
+      title: 'Could not retrieve vulnerabilities from the server',
+      description: 'Service unavailable or error in connection',
+      severity_level: 'N/A',
+      cvss_score: null,
+      affected_products: [],
+      exploitation_status: 'Unknown',
+      published_date: new Date().toISOString(),
+      last_updated: new Date().toISOString(),
+      patch_available: false,
+      mitigation_steps: null,
+      tags: []
+    }];
   }
 }
 
@@ -285,87 +331,4 @@ export async function refreshIntelligence(): Promise<void> {
     console.error('Error refreshing intelligence:', error);
     throw error;
   }
-}
-
-// Helper functions to generate mock data for endpoints that might not be implemented yet
-function generateMockIndicators(count: number): CrowdStrikeIndicator[] {
-  const types = ['IP', 'Domain', 'URL', 'File Hash', 'Email'];
-  const malwareFamilies = ['SUNBURST', 'TEARDROP', 'BEACON', 'MIMIKATZ', 'COBALTSTRIKE'];
-  const threatGroups = ['APT29', 'APT28', 'CARBON SPIDER', 'WIZARD SPIDER', 'FANCY BEAR'];
-  const confidenceLevels = ['High', 'Medium', 'Low'];
-  const severityLevels = ['Critical', 'High', 'Medium', 'Low'];
-  
-  return Array.from({ length: count }, (_, i) => ({
-    id: `indicator-${i + 1}`,
-    indicator_value: types[i % types.length] === 'IP' 
-      ? `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`
-      : types[i % types.length] === 'Domain'
-        ? `malicious-domain-${i}.com`
-        : types[i % types.length] === 'URL'
-          ? `https://malicious-site-${i}.com/path/to/resource`
-          : types[i % types.length] === 'File Hash'
-            ? `a1b2c3d4e5f6${i}7890abcdef1234567890abcdef`
-            : `malicious-email-${i}@evil.com`,
-    indicator_type: types[i % types.length],
-    description: `This is a malicious ${types[i % types.length].toLowerCase()} associated with recent threat activity.`,
-    malware_families: [malwareFamilies[i % malwareFamilies.length]],
-    threat_groups: [threatGroups[i % threatGroups.length]],
-    confidence_level: confidenceLevels[i % confidenceLevels.length],
-    severity_level: severityLevels[i % severityLevels.length],
-    published_date: new Date(Date.now() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000).toISOString(),
-    last_updated: new Date(Date.now() - Math.floor(Math.random() * 7) * 24 * 60 * 60 * 1000).toISOString(),
-    expiration_date: Math.random() > 0.3 
-      ? new Date(Date.now() + Math.floor(Math.random() * 90) * 24 * 60 * 60 * 1000).toISOString()
-      : null,
-    tags: [`tag-${i % 5}`, `category-${Math.floor(i / 3)}`]
-  }));
-}
-
-function generateMockRules(count: number): CrowdStrikeRule[] {
-  const ruleTypes = ['YARA', 'Sigma', 'Snort', 'STIX', 'Custom'];
-  const mitreTechniques = ['T1566', 'T1190', 'T1059', 'T1027', 'T1486'];
-  const malwareFamilies = ['SUNBURST', 'TEARDROP', 'BEACON', 'MIMIKATZ', 'COBALTSTRIKE'];
-  const threatGroups = ['APT29', 'APT28', 'CARBON SPIDER', 'WIZARD SPIDER', 'FANCY BEAR'];
-  const confidenceLevels = ['High', 'Medium', 'Low'];
-  const severityLevels = ['Critical', 'High', 'Medium', 'Low'];
-  
-  return Array.from({ length: count }, (_, i) => ({
-    id: `rule-${i + 1}`,
-    name: `Detection Rule ${i + 1}`,
-    description: `This rule detects ${malwareFamilies[i % malwareFamilies.length]} activity associated with ${threatGroups[i % threatGroups.length]}.`,
-    rule_type: ruleTypes[i % ruleTypes.length],
-    rule_content: `rule Malicious_Activity_${i} {\n    meta:\n        description = "Detects malicious activity"\n    strings:\n        $a = "malicious string"\n    condition:\n        $a\n}`,
-    mitre_techniques: [mitreTechniques[i % mitreTechniques.length]],
-    malware_families: [malwareFamilies[i % malwareFamilies.length]],
-    threat_groups: [threatGroups[i % threatGroups.length]],
-    confidence_level: confidenceLevels[i % confidenceLevels.length],
-    severity_level: severityLevels[i % severityLevels.length],
-    published_date: new Date(Date.now() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000).toISOString(),
-    last_updated: new Date(Date.now() - Math.floor(Math.random() * 7) * 24 * 60 * 60 * 1000).toISOString(),
-    tags: [`tag-${i % 5}`, `category-${Math.floor(i / 3)}`]
-  }));
-}
-
-function generateMockVulnerabilities(count: number): CrowdStrikeVulnerability[] {
-  const products = ['Windows', 'Office', 'Exchange', 'Chrome', 'Firefox', 'Adobe Reader', 'Java'];
-  const exploitationStatuses = ['Exploited in the Wild', 'Proof of Concept Available', 'No Known Exploitation', 'Under Analysis'];
-  const severityLevels = ['Critical', 'High', 'Medium', 'Low'];
-  
-  return Array.from({ length: count }, (_, i) => ({
-    id: `vuln-${i + 1}`,
-    cve_id: `CVE-${2023 - Math.floor(i / 5)}-${10000 + i}`,
-    title: `Vulnerability in ${products[i % products.length]} allows remote code execution`,
-    description: `A vulnerability in ${products[i % products.length]} could allow an attacker to execute arbitrary code on the affected system.`,
-    severity_level: severityLevels[i % severityLevels.length],
-    cvss_score: Math.floor(Math.random() * 10) + (severityLevels[i % severityLevels.length] === 'Critical' ? 9 : 
-                                                 severityLevels[i % severityLevels.length] === 'High' ? 7 : 
-                                                 severityLevels[i % severityLevels.length] === 'Medium' ? 4 : 1),
-    affected_products: [products[i % products.length]],
-    exploitation_status: exploitationStatuses[i % exploitationStatuses.length],
-    published_date: new Date(Date.now() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000).toISOString(),
-    last_updated: new Date(Date.now() - Math.floor(Math.random() * 7) * 24 * 60 * 60 * 1000).toISOString(),
-    patch_available: Math.random() > 0.3,
-    mitigation_steps: Math.random() > 0.3 ? `Apply the latest security updates for ${products[i % products.length]}.` : null,
-    tags: [`tag-${i % 5}`, `category-${Math.floor(i / 3)}`]
-  }));
 } 

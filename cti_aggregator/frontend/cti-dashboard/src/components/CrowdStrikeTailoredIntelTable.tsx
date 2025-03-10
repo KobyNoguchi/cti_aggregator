@@ -62,32 +62,37 @@ export default function CrowdStrikeTailoredIntelTable() {
     try {
       setLoading(true);
       const data = await fetchCrowdStrikeTailoredIntel();
-      setIntelReports(data);
+      
+      // Map the API response to the expected format
+      const formattedData = data.map(item => ({
+        ...item,
+        title: item.name,
+        report_type: 'Intelligence Report', 
+        target_sectors: item.targeted_sectors || [],
+        target_countries: [], 
+        malware_families: [], 
+        tags: [], 
+        published_date: item.publish_date,
+        confidence_level: 'Medium', 
+        severity_level: 'Medium', 
+        report_url: item.url
+      }));
+      
+      setIntelReports(formattedData);
       
       // Extract unique report types for filter dropdown
-      const uniqueReportTypes = [...new Set(data.map(report => report.report_type))].filter(Boolean).sort();
-      setReportTypes(uniqueReportTypes);
+      const uniqueReportTypes = [...new Set(formattedData.map(report => report.report_type || ''))].filter(Boolean).sort();
+      setReportTypes(uniqueReportTypes as string[]);
       
       // Extract unique severity levels for filter dropdown
-      const uniqueSeverityLevels = [...new Set(data.map(report => report.severity_level))].filter(Boolean).sort();
-      setSeverityLevels(uniqueSeverityLevels);
+      const uniqueSeverityLevels = [...new Set(formattedData.map(report => report.severity_level || ''))].filter(Boolean).sort();
+      setSeverityLevels(uniqueSeverityLevels as string[]);
       
       setError(null);
     } catch (err) {
-      setError('Failed to fetch CrowdStrike Tailored Intelligence data. Please try again later.');
+      setError('Failed to fetch CrowdStrike Tailored Intelligence data. Please check that the API credentials are properly configured in the backend .env file.');
       console.error(err);
-      
-      // Generate mock data for development/testing
-      const mockData = generateMockTailoredIntel(15);
-      setIntelReports(mockData);
-      
-      // Extract unique report types from mock data
-      const uniqueReportTypes = [...new Set(mockData.map(report => report.report_type))].filter(Boolean).sort();
-      setReportTypes(uniqueReportTypes);
-      
-      // Extract unique severity levels from mock data
-      const uniqueSeverityLevels = [...new Set(mockData.map(report => report.severity_level))].filter(Boolean).sort();
-      setSeverityLevels(uniqueSeverityLevels);
+      setIntelReports([]);
     } finally {
       setLoading(false);
     }
@@ -108,12 +113,12 @@ export default function CrowdStrikeTailoredIntelTable() {
     if (searchTerm.trim() !== '') {
       const search = searchTerm.toLowerCase();
       filtered = filtered.filter(report => 
-        report.title.toLowerCase().includes(search) || 
+        (report.title || '').toLowerCase().includes(search) || 
         (report.summary && report.summary.toLowerCase().includes(search)) ||
-        report.threat_groups.some(group => group.toLowerCase().includes(search)) ||
-        report.malware_families.some(malware => malware.toLowerCase().includes(search)) ||
-        report.target_sectors.some(sector => sector.toLowerCase().includes(search)) ||
-        report.target_countries.some(country => country.toLowerCase().includes(search))
+        (report.threat_groups && report.threat_groups.some(group => group.toLowerCase().includes(search))) ||
+        (report.malware_families && report.malware_families.some(malware => malware.toLowerCase().includes(search))) ||
+        (report.target_sectors && report.target_sectors.some(sector => sector.toLowerCase().includes(search))) ||
+        (report.target_countries && report.target_countries.some(country => country.toLowerCase().includes(search)))
       );
     }
     
@@ -124,9 +129,9 @@ export default function CrowdStrikeTailoredIntelTable() {
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
     try {
-      return format(new Date(dateString), 'PPP');
+      return format(new Date(dateString), 'MMM d, yyyy');
     } catch (error) {
-      return 'Invalid date';
+      return dateString;
     }
   };
 
@@ -141,44 +146,16 @@ export default function CrowdStrikeTailoredIntelTable() {
     setExpandedRows(newExpandedRows);
   };
 
-  // Get severity badge color
-  const getSeverityColor = (severity: string) => {
-    const severityColors: Record<string, string> = {
+  // Get appropriate color for severity badge
+  const getSeverityColor = (severity: string = 'Medium') => {
+    const severityColors = {
       'Critical': 'bg-red-50 text-red-600 border-red-200',
       'High': 'bg-orange-50 text-orange-600 border-orange-200',
       'Medium': 'bg-yellow-50 text-yellow-600 border-yellow-200',
       'Low': 'bg-green-50 text-green-600 border-green-200',
     };
     
-    return severityColors[severity] || 'bg-gray-50 text-gray-600 border-gray-200';
-  };
-
-  // Generate mock data for development/testing
-  const generateMockTailoredIntel = (count: number): CrowdStrikeTailoredIntel[] => {
-    const reportTypes = ['Malware Analysis', 'Threat Actor Profile', 'Campaign Report', 'Industry Alert', 'Vulnerability Assessment'];
-    const sectors = ['Financial Services', 'Healthcare', 'Government', 'Energy', 'Technology', 'Manufacturing', 'Retail'];
-    const countries = ['United States', 'United Kingdom', 'Germany', 'Japan', 'Australia', 'Canada', 'France'];
-    const threatGroups = ['APT29', 'APT28', 'CARBON SPIDER', 'WIZARD SPIDER', 'FANCY BEAR'];
-    const malwareFamilies = ['SUNBURST', 'TEARDROP', 'BEACON', 'MIMIKATZ', 'COBALTSTRIKE'];
-    const confidenceLevels = ['High', 'Medium', 'Low'];
-    const severityLevels = ['Critical', 'High', 'Medium', 'Low'];
-    
-    return Array.from({ length: count }, (_, i) => ({
-      id: `report-${i + 1}`,
-      title: `${reportTypes[i % reportTypes.length]}: ${threatGroups[i % threatGroups.length]} targeting ${sectors[i % sectors.length]}`,
-      summary: `This report details recent activity by ${threatGroups[i % threatGroups.length]} targeting organizations in the ${sectors[i % sectors.length]} sector. The threat actor is using ${malwareFamilies[i % malwareFamilies.length]} malware to compromise systems.`,
-      report_type: reportTypes[i % reportTypes.length],
-      target_sectors: [sectors[i % sectors.length], sectors[(i + 1) % sectors.length]],
-      target_countries: [countries[i % countries.length], countries[(i + 2) % countries.length]],
-      threat_groups: [threatGroups[i % threatGroups.length]],
-      malware_families: [malwareFamilies[i % malwareFamilies.length], malwareFamilies[(i + 1) % malwareFamilies.length]],
-      tags: [`tag-${i % 5}`, `category-${Math.floor(i / 3)}`],
-      published_date: new Date(Date.now() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000).toISOString(),
-      last_updated: new Date(Date.now() - Math.floor(Math.random() * 7) * 24 * 60 * 60 * 1000).toISOString(),
-      confidence_level: confidenceLevels[i % confidenceLevels.length],
-      severity_level: severityLevels[i % severityLevels.length],
-      report_url: Math.random() > 0.3 ? `https://example.com/reports/report-${i + 1}` : null
-    }));
+    return severityColors[severity as keyof typeof severityColors] || 'bg-gray-50 text-gray-600 border-gray-200';
   };
 
   return (
@@ -293,7 +270,7 @@ export default function CrowdStrikeTailoredIntelTable() {
                           </Badge>
                         </TableCell>
                         <TableCell className="hidden md:table-cell">
-                          {formatDate(report.published_date)}
+                          {formatDate(report.published_date || null)}
                         </TableCell>
                       </TableRow>
                       {expandedRows.has(report.id) && (
@@ -372,7 +349,7 @@ export default function CrowdStrikeTailoredIntelTable() {
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
                                   <h4 className="text-sm font-semibold mb-1">Published Date</h4>
-                                  <p className="text-sm">{formatDate(report.published_date)}</p>
+                                  <p className="text-sm">{formatDate(report.published_date || null)}</p>
                                 </div>
                                 <div>
                                   <h4 className="text-sm font-semibold mb-1">Last Updated</h4>

@@ -140,20 +140,20 @@ class FreeEnhancedScraper:
                 wait_time = self.retry_delay * (2 ** attempt)  # Exponential backoff
                 time.sleep(wait_time)
             
-            # All retries failed, create a dummy response
+            # All retries failed, create a simple error response
             logger.error(f"All {self.max_retries} attempts failed when requesting {url}")
             
-            # Create a dummy response to maintain a consistent interface
-            dummy_response = requests.Response()
-            dummy_response.status_code = 500
-            dummy_response._content = b'{"error": "All request attempts failed"}'
-            dummy_response.url = url
+            # Create a simple error response to maintain a consistent interface
+            error_response = requests.Response()
+            error_response.status_code = 404
+            error_response._content = b'{"error": "404 Not Found", "message": "The requested resource could not be reached"}'
+            error_response.url = url
             
             # Attach the last error to the response
             if last_error:
-                dummy_response.error = last_error
+                error_response.error = last_error
             
-            return dummy_response
+            return error_response
     
     def get_soup(self, url: str, headers: Optional[Dict[str, str]] = None, 
                 params: Optional[Dict[str, Any]] = None) -> Optional[BeautifulSoup]:

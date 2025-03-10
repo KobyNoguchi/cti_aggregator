@@ -1,12 +1,13 @@
 from rest_framework import viewsets, filters
 from django_filters.rest_framework import DjangoFilterBackend, CharFilter, FilterSet
-from ioc_scraper.models import Vulnerability, IntelligenceArticle, CrowdStrikeIntel, CrowdStrikeMalware
+from ioc_scraper.models import Vulnerability, IntelligenceArticle, CrowdStrikeIntel, CrowdStrikeMalware, CISAKev, CrowdStrikeTailoredIntel
 from .serializers import (
     VulnerabilitySerializer, 
     IntelligenceArticleSerializer, 
     CrowdStrikeIntelSerializer, 
     CrowdStrikeMalwareSerializer, 
-    CISAKevSerializer
+    CISAKevSerializer,
+    CrowdStrikeTailoredIntelSerializer
 )
 from django.db import models
 import os
@@ -20,6 +21,9 @@ from django.db.models import Q
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from ioc_scraper.tasks import fetch_all_intelligence
+
+# Add the data_sources directory to the path
+sys.path.insert(0, os.path.join(settings.BASE_DIR, '..', 'data_sources'))
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -142,6 +146,18 @@ class CrowdStrikeMalwareViewSet(viewsets.ReadOnlyModelViewSet):
         })
     })
 
+class CrowdStrikeTailoredIntelViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint that allows CrowdStrike Tailored Intelligence reports to be viewed.
+    Provides comprehensive data about intelligence reports, including threat groups,
+    targeted sectors, and report URLs.
+    """
+    queryset = CrowdStrikeTailoredIntel.objects.all().order_by("-publish_date")
+    serializer_class = CrowdStrikeTailoredIntelSerializer
+    filterset_fields = ['threat_groups', 'targeted_sectors']
+    search_fields = ['title', 'summary']
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+
 # CIRA Data endpoint
 def get_cira_data(request):
     """
@@ -221,5 +237,58 @@ def threat_intelligence_feed(request):
     
     html += "</body></html>"
     return HttpResponse(html)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def test_crowdstrike_api(request):
+    """
+    Endpoint to test connection to CrowdStrike API
+    """
+    try:
+        # Import here to avoid circular imports
+        from tailored_intelligence import get_falcon_api
+        
+        falcon = get_falcon_api()
+        if not falcon:
+            return JsonResponse({
+                "status": "error",
+                "message": "Failed to initialize CrowdStrike API client. Please check your environment variables.",
+                "details": {
+                    "missing_credentials": not (os.environ.get('FALCON_CLIENT_ID') and os.environ.get('FALCON_CLIENT_SECRET')),
+                    "environment_vars": {
+                        "FALCON_CLIENT_ID": "✓" if os.environ.get('FALCON_CLIENT_ID') else "✗",
+                        "FALCON_CLIENT_SECRET": "✓" if os.environ.get('FALCON_CLIENT_SECRET') else "✗"
+                    }
+                }
+            }, status=401)
+        
+        # Try to make a simple API call - use QueryIntelReportEntities which should be available
+        response = falcon.command("QueryIntelReportEntities", {"limit": 1})
+        
+        if response["status_code"] == 200:
+            return JsonResponse({
+                "status": "success",
+                "message": "Successfully connected to CrowdStrike API",
+                "api_response": {
+                    "status_code": response["status_code"],
+                    "report_ids": response.get("body", {}).get("resources", []),
+                    "total_reports": response.get("body", {}).get("meta", {}).get("pagination", {}).get("total", 0)
+                }
+            })
+        else:
+            return JsonResponse({
+                "status": "error",
+                "message": "API request failed",
+                "details": {
+                    "status_code": response["status_code"],
+                    "error": response.get("body", {}).get("errors", [])
+                }
+            }, status=response["status_code"])
+        
+    except Exception as e:
+        return JsonResponse({
+            "status": "error",
+            "message": f"Error testing CrowdStrike API: {str(e)}",
+        }, status=500)
 
 # Create your views here.

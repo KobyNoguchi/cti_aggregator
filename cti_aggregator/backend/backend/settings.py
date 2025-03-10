@@ -12,6 +12,26 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 import os
+import sys
+import logging
+
+# Load environment variables from .env file
+from dotenv import load_dotenv
+
+# Find .env file - check various locations
+env_paths = [
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env'),  # Project root
+    os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'),  # Backend folder
+    os.path.join(os.path.dirname(__file__), '.env'),  # settings.py folder
+]
+
+for env_path in env_paths:
+    if os.path.exists(env_path):
+        load_dotenv(env_path)
+        print(f"Loaded environment variables from {env_path}")
+        break
+else:
+    print("Warning: No .env file found. Make sure to set environment variables for API credentials.")
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent

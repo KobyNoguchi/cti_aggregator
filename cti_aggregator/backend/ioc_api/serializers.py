@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from ioc_scraper.models import Vulnerability, IntelligenceArticle, CrowdStrikeIntel, CrowdStrikeMalware
+from ioc_scraper.models import Vulnerability, IntelligenceArticle, CrowdStrikeIntel, CrowdStrikeMalware, CrowdStrikeTailoredIntel
 
 class VulnerabilitySerializer(serializers.ModelSerializer):
     class Meta:
@@ -91,3 +91,24 @@ class CrowdStrikeMalwareSerializer(serializers.ModelSerializer):
                 representation[field] = []
                 
         return representation
+
+class CrowdStrikeTailoredIntelSerializer(serializers.ModelSerializer):
+    id = serializers.CharField(source='report_id')
+    name = serializers.CharField(source='title')
+    threat_groups = serializers.SerializerMethodField()
+    targeted_sectors = serializers.SerializerMethodField()
+    url = serializers.CharField(source='report_url')
+    
+    class Meta:
+        model = CrowdStrikeTailoredIntel
+        fields = ['id', 'name', 'publish_date', 'last_updated', 'summary', 'url', 'threat_groups', 'targeted_sectors']
+    
+    def get_threat_groups(self, obj):
+        if obj.threat_groups:
+            return obj.threat_groups.split(',')
+        return []
+    
+    def get_targeted_sectors(self, obj):
+        if obj.targeted_sectors:
+            return obj.targeted_sectors.split(',')
+        return []
