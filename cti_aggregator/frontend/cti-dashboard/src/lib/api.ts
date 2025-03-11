@@ -56,6 +56,12 @@ export interface CrowdStrikeTailoredIntel {
   url: string | null;
   threat_groups: string[];
   targeted_sectors: string[];
+  // New fields
+  source?: string;
+  hit_type?: string;
+  matched_rule_names?: string[];
+  details?: string;
+  first_seen?: string;
   // Frontend-only fields
   title?: string;
   report_type?: string;
@@ -90,7 +96,6 @@ export interface CrowdStrikeRule {
   description: string | null;
   rule_type: string;
   rule_content: string;
-  mitre_techniques: string[];
   malware_families: string[];
   threat_groups: string[];
   confidence_level: string;

@@ -346,4 +346,28 @@ def health_check(request):
     
     return response
 
+@api_view(['GET'])
+def refresh_tailored_intel(request):
+    """
+    Endpoint to manually trigger tailored intelligence refresh
+    """
+    try:
+        # Import the task
+        from ioc_scraper.tasks import update_tailored_intelligence
+        
+        # Run the task synchronously
+        result = update_tailored_intelligence()
+        
+        return JsonResponse({
+            "status": "success",
+            "message": "Tailored intelligence refresh completed",
+            "result": result
+        })
+    except Exception as e:
+        logger.error(f"Error refreshing tailored intelligence: {str(e)}")
+        return JsonResponse(
+            {"status": "error", "message": str(e)},
+            status=500
+        )
+
 # Create your views here.

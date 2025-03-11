@@ -14,19 +14,29 @@ from django.db import connection
 from django.db.models import Max, Q
 from django.core.cache import cache
 from celery.result import AsyncResult
-# Try different import paths for inspect
+from backend.celery import app as celery_app
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Import Celery inspect functionality
 try:
+    # For Celery 5.x
     from celery.app.control import inspect
+    logger.debug("Successfully imported inspect from celery.app.control")
 except ImportError:
     try:
+        # For Celery 4.x
         from celery.control import inspect
+        logger.debug("Successfully imported inspect from celery.control")
     except ImportError:
         try:
+            # Fallback method
             from celery import inspect
+            logger.debug("Successfully imported inspect from celery")
         except ImportError:
+            logger.warning("Could not import celery inspect functionality. Some monitoring features may be unavailable.")
             inspect = None
-            print("WARNING: Could not import celery inspect functionality")
-from backend.celery import app as celery_app
 
 # Add the parent directory to sys.path to allow importing from data_sources
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
@@ -44,7 +54,6 @@ try:
     ENHANCED_SCRAPER_AVAILABLE = True
 except ImportError:
     ENHANCED_SCRAPER_AVAILABLE = False
-    logger = logging.getLogger(__name__)
     logger.warning("Enhanced scraper not available. Some scrapers will use fallback methods.")
 else:
     logger = logging.getLogger(__name__)
@@ -97,7 +106,6 @@ def fetch_all_intelligence():
         fetch_unit42_intelligence.s(),
         fetch_zscaler_intelligence.s(),
         fetch_orange_defense_intelligence.s(),
-        fetch_mitre_intelligence.s(),
         fetch_google_tag_intelligence.s(),
     ]
     
@@ -689,77 +697,6 @@ def fetch_orange_defense_intelligence():
         return f"Error fetching {source_name} data: {str(e)}"
 
 @shared_task
-def fetch_mitre_intelligence():
-    """Fetch intelligence articles from MITRE ATT&CK Updates"""
-    url = "https://attack.mitre.org/resources/updates/"
-    source_name = "MITRE ATT&CK"
-    
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        response = requests.get(url, headers=headers)
-        logger.info(f"MITRE fetch status: {response.status_code}")
-        
-        if response.status_code != 200:
-            logger.error(f"Failed to fetch {source_name} data: {response.status_code}")
-            return f"Failed to fetch {source_name} data: {response.status_code}"
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
-        articles = soup.select('.card')
-        
-        count = 0
-        for article in articles:
-            title_elem = article.select_one('.card-title')
-            if not title_elem:
-                continue
-            
-            # Extract the link
-            link_elem = article.select_one('a')
-            if not link_elem:
-                continue
-                
-            title = title_elem.text.strip()
-            article_url = link_elem['href']
-            if not article_url.startswith('http'):
-                article_url = 'https://attack.mitre.org' + article_url
-            
-            # Extract date - MITRE updates often have dates in the title or card body
-            date_elem = article.select_one('.card-text')
-            published_date = datetime.now()
-            if date_elem:
-                # Try to find a date pattern in the text
-                text = date_elem.text.strip()
-                import re
-                date_match = re.search(r'(\w+ \d{1,2}, \d{4})', text)
-                if date_match:
-                    try:
-                        published_date = datetime.strptime(date_match.group(1), '%B %d, %Y')
-                    except ValueError:
-                        pass
-            
-            # Extract summary
-            summary = date_elem.text.strip() if date_elem else ""
-            
-            # Update or create article
-            IntelligenceArticle.objects.update_or_create(
-                url=article_url,
-                defaults={
-                    'title': title,
-                    'source': source_name,
-                    'published_date': published_date,
-                    'summary': summary[:500] + ('...' if len(summary) > 500 else '')
-                }
-            )
-            count += 1
-        
-        logger.info(f"Updated {count} {source_name} intelligence articles")
-        return f"Updated {count} {source_name} intelligence articles"
-    except Exception as e:
-        logger.error(f"Error fetching {source_name} data: {str(e)}")
-        return f"Error fetching {source_name} data: {str(e)}"
-
-@shared_task
 def fetch_dark_reading_intelligence():
     """Fetch intelligence articles from Dark Reading"""
     url = "https://www.darkreading.com/threat-intelligence"
@@ -971,16 +908,50 @@ def system_health_check():
     """
     logger.info("Running system health check...")
     
+    # Collect health check results with error handling
     results = {
         "database": check_database_health(),
-        "celery": check_celery_health(),
-        "data_sources": check_data_sources_health(),
-        "cleanup": perform_cleanup_tasks(),
     }
     
+    # Check Celery health with additional error handling
+    try:
+        results["celery"] = check_celery_health()
+    except Exception as e:
+        logger.error(f"Celery health check completely failed: {str(e)}")
+        results["celery"] = {
+            "status": "unhealthy", 
+            "details": f"Health check error: {str(e)}"
+        }
+    
+    # Continue with other checks
+    try:
+        results["data_sources"] = check_data_sources_health()
+    except Exception as e:
+        logger.error(f"Data sources health check failed: {str(e)}")
+        results["data_sources"] = {
+            "status": "unhealthy", 
+            "details": f"Health check error: {str(e)}"
+        }
+    
+    try:
+        results["cleanup"] = perform_cleanup_tasks()
+    except Exception as e:
+        logger.error(f"Cleanup tasks failed: {str(e)}")
+        results["cleanup"] = {
+            "status": "degraded", 
+            "details": f"Cleanup error: {str(e)}"
+        }
+    
     # Generate overall status
-    all_statuses = [v.get("status") for v in results.values()]
-    overall_status = "healthy" if all(s == "healthy" for s in all_statuses) else "degraded"
+    unhealthy_count = sum(1 for v in results.values() if v.get("status") == "unhealthy")
+    degraded_count = sum(1 for v in results.values() if v.get("status") == "degraded")
+    
+    if unhealthy_count > 0:
+        overall_status = "unhealthy"
+    elif degraded_count > 0:
+        overall_status = "degraded"
+    else:
+        overall_status = "healthy"
     
     # Create summary
     summary = f"System Health: {overall_status.upper()}\n"
@@ -1041,35 +1012,55 @@ def check_celery_health():
     try:
         # Check if inspect is available
         if inspect is None:
+            logger.warning("Celery health check degraded: inspect functionality not available")
             return {
                 "status": "degraded", 
-                "details": "Celery inspect functionality not available"
+                "details": "Celery inspect functionality not available. Install the appropriate Celery version."
             }
             
-        # Check if Celery workers are running
-        inspector = inspect()
-        active_workers = inspector.active()
-        
-        if not active_workers:
-            return {"status": "unhealthy", "details": "No active workers found"}
-        
-        # Check for tasks stuck in reserved state
-        reserved = inspector.reserved()
-        reserved_count = sum(len(tasks) for tasks in reserved.values()) if reserved else 0
-        
-        # Check scheduled tasks
-        scheduled = inspector.scheduled()
-        scheduled_count = sum(len(tasks) for tasks in scheduled.values()) if scheduled else 0
-        
-        worker_count = len(active_workers)
-        if reserved_count > 10:
-            return {"status": "degraded", "details": f"{reserved_count} tasks stuck in reserved state"}
-        
-        return {"status": "healthy", "details": f"{worker_count} workers, {scheduled_count} scheduled tasks"}
-    
+        # Initialize inspector
+        try:
+            inspector = inspect()
+            if inspector is None:
+                logger.warning("Celery health check degraded: inspector could not be initialized")
+                return {
+                    "status": "degraded", 
+                    "details": "Celery inspector could not be initialized."
+                }
+                
+            # Check if Celery workers are running
+            active_workers = inspector.active()
+            
+            if not active_workers:
+                logger.warning("Celery health check failed: No active workers found")
+                return {"status": "unhealthy", "details": "No active workers found. Make sure Celery workers are running."}
+            
+            # Check for tasks stuck in reserved state
+            reserved = inspector.reserved()
+            reserved_count = sum(len(tasks) for tasks in reserved.values()) if reserved else 0
+            
+            # Check scheduled tasks
+            scheduled = inspector.scheduled()
+            scheduled_count = sum(len(tasks) for tasks in scheduled.values()) if scheduled else 0
+            
+            # Get stats about workers
+            stats = inspector.stats()
+            worker_count = len(stats) if stats else 0
+            
+            return {
+                "status": "healthy",
+                "details": f"Active workers: {worker_count}, Reserved tasks: {reserved_count}, Scheduled tasks: {scheduled_count}"
+            }
+        except Exception as e:
+            logger.error(f"Error while using Celery inspector: {str(e)}")
+            return {
+                "status": "degraded",
+                "details": f"Error inspecting Celery workers: {str(e)}"
+            }
+            
     except Exception as e:
         logger.error(f"Celery health check failed: {str(e)}")
-        return {"status": "degraded", "details": str(e)}
+        return {"status": "unhealthy", "details": str(e)}
 
 def check_data_sources_health():
     """Check data sources health based on last update time."""

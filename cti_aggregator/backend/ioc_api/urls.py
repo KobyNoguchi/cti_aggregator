@@ -9,6 +9,7 @@ from .views import (
     CrowdStrikeTailoredIntelViewSet,
     get_cira_data,
     refresh_intelligence,
+    refresh_tailored_intel,
     threat_intelligence_feed,
     test_crowdstrike_api,
     health_check
@@ -26,6 +27,7 @@ urlpatterns = [
     path('', include(router.urls)),
     path('cira-data/', get_cira_data, name='cira-data'),
     path('refresh-intelligence/', refresh_intelligence, name='refresh-intelligence'),
+    path('refresh-tailored-intel/', refresh_tailored_intel, name='refresh-tailored-intel'),
     path('threat-intelligence-feed/', threat_intelligence_feed, name='threat-intelligence-feed'),
     path('test-crowdstrike-api/', test_crowdstrike_api, name='test-crowdstrike-api'),
     path('health-check/', health_check, name='health-check'),

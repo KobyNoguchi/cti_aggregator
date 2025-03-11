@@ -98,10 +98,19 @@ class CrowdStrikeTailoredIntelSerializer(serializers.ModelSerializer):
     threat_groups = serializers.SerializerMethodField()
     targeted_sectors = serializers.SerializerMethodField()
     url = serializers.CharField(source='report_url')
+    source = serializers.CharField(required=False, allow_null=True)
+    hit_type = serializers.CharField(required=False, allow_null=True)
+    matched_rule_names = serializers.SerializerMethodField()
+    details = serializers.CharField(required=False, allow_null=True)
+    first_seen = serializers.DateTimeField(required=False, allow_null=True)
     
     class Meta:
         model = CrowdStrikeTailoredIntel
-        fields = ['id', 'name', 'publish_date', 'last_updated', 'summary', 'url', 'threat_groups', 'targeted_sectors']
+        fields = [
+            'id', 'name', 'publish_date', 'last_updated', 'summary', 'url', 
+            'threat_groups', 'targeted_sectors', 'source', 'hit_type', 
+            'matched_rule_names', 'details', 'first_seen'
+        ]
     
     def get_threat_groups(self, obj):
         # Prefer JSON field if available, fall back to text field for backward compatibility
@@ -117,4 +126,10 @@ class CrowdStrikeTailoredIntelSerializer(serializers.ModelSerializer):
             return obj.targeted_sectors_json
         elif obj.targeted_sectors:
             return [sector.strip() for sector in obj.targeted_sectors.split(',') if sector.strip()]
+        return []
+        
+    def get_matched_rule_names(self, obj):
+        # Return matched rule names if available
+        if hasattr(obj, 'matched_rule_names') and obj.matched_rule_names:
+            return obj.matched_rule_names
         return []

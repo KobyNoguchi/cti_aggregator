@@ -23,7 +23,8 @@ import {
   ChevronUp,
   Globe,
   AlertTriangle,
-  Wifi
+  Wifi,
+  ExternalLink
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -325,7 +326,21 @@ export default function CrowdStrikeActorsTable() {
                     <React.Fragment key={actor.actor_id}>
                       <TableRow>
                         <TableCell className="font-medium">
-                          {actor.name}
+                          <div className="flex items-center">
+                            <span>{actor.name}</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 ml-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleRowExpansion(actor.actor_id);
+                              }}
+                              title="View full details"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </TableCell>
                         <TableCell>
                           {actor.adversary_type || 'Unknown'}
@@ -364,7 +379,22 @@ export default function CrowdStrikeActorsTable() {
                         <TableRow>
                           <TableCell colSpan={5} className="p-4 bg-gray-50">
                             <div className="text-sm">
-                              <h4 className="font-semibold mb-2">Details</h4>
+                              <div className="flex justify-between items-start mb-4">
+                                <h4 className="font-semibold">Details</h4>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-blue-600 hover:text-blue-800"
+                                  onClick={() => {
+                                    // This would normally link to a full report page
+                                    // For demo purposes, we're just toggling the expanded view
+                                    window.open(`https://intelligence.crowdstrike.com/actors/${actor.actor_id}`, '_blank');
+                                  }}
+                                >
+                                  <ExternalLink className="h-4 w-4 mr-1" />
+                                  View Full Report
+                                </Button>
+                              </div>
                               
                               {actor.description && (
                                 <div className="mb-3">

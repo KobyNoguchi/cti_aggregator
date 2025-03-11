@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { fetchCrowdStrikeTailoredIntel, CrowdStrikeTailoredIntel, isErrorResponse, ApiErrorResponse, clearCache } from '@/lib/api'
+import { fetchCrowdStrikeTailoredIntel, isErrorResponse, ApiErrorResponse, clearCache } from '@/lib/api'
 import { format } from 'date-fns'
 import {
   Table,
@@ -28,6 +28,44 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+
+// Create a simple logger for debugging
+const logger = {
+  error: (message: string, error?: any) => {
+    console.error(`[CrowdStrikeTailoredIntelTable] ${message}`, error || '');
+  },
+  info: (message: string) => {
+    console.info(`[CrowdStrikeTailoredIntelTable] ${message}`);
+  }
+};
+
+export interface CrowdStrikeTailoredIntel {
+  id: string;
+  name: string;
+  summary: string | null;
+  publish_date: string;
+  last_updated: string;
+  url: string | null;
+  threat_groups: string[];
+  targeted_sectors: string[];
+  // New fields
+  source?: string;
+  hit_type?: string;
+  matched_rule_names?: string[];
+  details?: string;
+  first_seen?: string;
+  // Frontend-only fields
+  title?: string;
+  report_type?: string;
+  target_sectors?: string[];
+  target_countries?: string[];
+  malware_families?: string[];
+  tags?: string[];
+  published_date?: string;
+  confidence_level?: string;
+  severity_level?: string;
+  report_url?: string | null;
+}
 
 export default function CrowdStrikeTailoredIntelTable() {
   const [intelReports, setIntelReports] = useState<CrowdStrikeTailoredIntel[]>([]);
@@ -75,7 +113,22 @@ export default function CrowdStrikeTailoredIntelTable() {
       setLoading(true);
       if (forceRefresh) {
         setIsRefreshing(true);
+        
+        // Call the refresh endpoint directly
+        try {
+          const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+          const refreshResponse = await fetch(`${backendUrl}/refresh-tailored-intel/`);
+          
+          if (!refreshResponse.ok) {
+            logger.error('Error refreshing tailored intelligence data');
+          } else {
+            logger.info('Successfully refreshed tailored intelligence data');
+          }
+        } catch (refreshError) {
+          logger.error('Failed to call refresh endpoint', refreshError);
+        }
       }
+      
       setError(null);
       setErrorType(null);
       setRetrying(false);
@@ -344,41 +397,43 @@ export default function CrowdStrikeTailoredIntelTable() {
               </TableCaption>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[50px]"></TableHead>
-                  <TableHead>Title</TableHead>
-                  <TableHead className="hidden md:table-cell">Report Type</TableHead>
-                  <TableHead className="hidden md:table-cell">Severity</TableHead>
-                  <TableHead className="hidden md:table-cell">Published Date</TableHead>
+                  <TableHead className="w-[200px]">Name</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Hit Type</TableHead>
+                  <TableHead>First Seen</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredReports.length > 0 ? (
                   filteredReports.map((report) => (
                     <React.Fragment key={report.id}>
-                      <TableRow
-                        className="cursor-pointer"
-                        onClick={() => toggleRowExpansion(report.id)}
-                      >
-                        <TableCell>
-                          {expandedRows.has(report.id) ? (
-                            <ChevronUp className="h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4" />
-                          )}
-                        </TableCell>
+                      <TableRow>
                         <TableCell className="font-medium">
-                          {report.title}
+                          {report.name}
                         </TableCell>
-                        <TableCell className="hidden md:table-cell">
-                          {report.report_type}
+                        <TableCell>
+                          {report.source || 'N/A'}
                         </TableCell>
-                        <TableCell className="hidden md:table-cell">
-                          <Badge className={`${getSeverityColor(report.severity_level)} px-2 py-1`}>
-                            {report.severity_level}
-                          </Badge>
+                        <TableCell>
+                          {report.hit_type || 'N/A'}
                         </TableCell>
-                        <TableCell className="hidden md:table-cell">
-                          {formatDate(report.published_date || null)}
+                        <TableCell>
+                          {formatDate(report.first_seen || null)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => toggleRowExpansion(report.id)}
+                          >
+                            {expandedRows.has(report.id) ? (
+                              <ChevronUp className="h-4 w-4 mr-1" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4 mr-1" />
+                            )}
+                            {expandedRows.has(report.id) ? 'Hide Details' : 'Show Details'}
+                          </Button>
                         </TableCell>
                       </TableRow>
                       {expandedRows.has(report.id) && (
@@ -466,6 +521,28 @@ export default function CrowdStrikeTailoredIntelTable() {
                                 <div>
                                   <h4 className="text-sm font-semibold mb-1">Confidence Level</h4>
                                   <p className="text-sm">{report.confidence_level}</p>
+                                </div>
+                              </div>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                  <h4 className="text-sm font-semibold mb-1">Matched Rules</h4>
+                                  <div className="flex flex-wrap gap-1">
+                                    {report.matched_rule_names && report.matched_rule_names.length > 0 ? (
+                                      report.matched_rule_names.map((rule, index) => (
+                                        <Badge key={index} variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+                                          {rule}
+                                        </Badge>
+                                      ))
+                                    ) : (
+                                      <span className="text-gray-500 text-sm">None identified</span>
+                                    )}
+                                  </div>
+                                </div>
+                                
+                                <div>
+                                  <h4 className="text-sm font-semibold mb-1">Details</h4>
+                                  <p className="text-sm">{report.details || 'No details available'}</p>
                                 </div>
                               </div>
                               
