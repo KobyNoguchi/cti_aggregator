@@ -145,159 +145,151 @@ def get_falcon_api():
         logger.error(f"Error initializing Falcon API: {str(e)}")
         return None
 
-def fetch_tailored_intel(api_client_id, api_client_secret, base_url=None):
+def fetch_tailored_intel(api_client_id=None, api_client_secret=None, base_url=None, falcon=None, use_cache=True):
     """
-    Fetch tailored intelligence from CrowdStrike API
+    Fetch tailored intelligence from CrowdStrike API using the Intel API endpoints
     
     Args:
-        api_client_id (str): CrowdStrike API client ID
-        api_client_secret (str): CrowdStrike API client secret
+        api_client_id (str, optional): CrowdStrike API client ID. Defaults to environment variable.
+        api_client_secret (str, optional): CrowdStrike API client secret. Defaults to environment variable.
         base_url (str, optional): Base URL for API. Defaults to None (US Cloud).
+        falcon (object, optional): Pre-initialized Falcon API Intel instance. Defaults to None.
+        use_cache (bool, optional): Whether to use caching. Defaults to True.
         
     Returns:
         list: List of tailored intelligence reports
     """
     if not FALCONPY_AVAILABLE:
-        logger.error("FalconPy library not installed. Using mock data for testing.")
-        # Return some mock data for testing
-        return [
-            {
-                "id": "mock-report-1",
-                "name": "Mock Tailored Intelligence Report 1",
-                "summary": "This is a mock report for testing without FalconPy",
-                "publish_date": datetime.now().isoformat(),
-                "last_updated": datetime.now().isoformat(),
-                "url": "https://example.com/mock-report-1",
-                "threat_groups": ["MOCK_GROUP_1", "MOCK_GROUP_2"],
-                "targeted_sectors": ["Technology", "Finance"],
-            },
-            {
-                "id": "mock-report-2",
-                "name": "Mock Tailored Intelligence Report 2",
-                "summary": "This is another mock report for testing without FalconPy",
-                "publish_date": (datetime.now() - timedelta(days=7)).isoformat(),
-                "last_updated": (datetime.now() - timedelta(days=2)).isoformat(),
-                "url": "https://example.com/mock-report-2",
-                "threat_groups": ["MOCK_GROUP_3"],
-                "targeted_sectors": ["Healthcare", "Geography: United States"],
-            }
-        ]
+        logger.error("FalconPy library not installed. Using sample data for testing.")
+        return generate_top_news_reports(10)
+    
+    # Check if we have cached data and use_cache is True
+    if use_cache:
+        cached_data = get_cached_data("tailored_intelligence")
+        if cached_data:
+            logger.info("Using cached tailored intelligence data")
+            return cached_data
+    
+    # Get API credentials from environment if not provided
+    if not api_client_id:
+        api_client_id = os.environ.get('FALCON_CLIENT_ID')
+    if not api_client_secret:
+        api_client_secret = os.environ.get('FALCON_CLIENT_SECRET')
+    
+    # Check if we have the required credentials
+    if not api_client_id or not api_client_secret:
+        logger.error("CrowdStrike API credentials not found")
+        return generate_top_news_reports(10)
     
     # Use FalconPy SDK for API access
     try:
-        # Create the API client
-        client = APIHarness(client_id=api_client_id,
-                            client_secret=api_client_secret,
-                            base_url=base_url)
+        logger.info("Initializing connection to CrowdStrike Falcon API")
         
-        # Log available operations for debugging
-        logger.info(f"Available operations: {len(client.commands)}")
-        intel_ops = [op for op in client.commands if isinstance(op, str) and 'intel' in op.lower()]
-        logger.info(f"Intelligence operations: {', '.join(intel_ops[:10])}...")
+        # Create the API client using the Intel class specifically
+        if not falcon:
+            from falconpy import Intel
+            falcon = Intel(client_id=api_client_id,
+                         client_secret=api_client_secret,
+                         base_url=base_url)
         
-        # Fetch reports - let's try a different filter to see if we get results
-        logger.info("Fetching intelligence reports...")
+        # Query for report IDs first using the standard Intel.query_report_ids method
+        logger.info("Querying for intelligence report IDs...")
+        
+        # Prepare parameters for the query
         params = {
-            "limit": 100
+            "limit": 100,  # Maximum number of reports to retrieve
+            "sort": "created_date.desc",  # Sort by creation date, newest first
         }
         
-        # Try to get any kind of intel reports
-        response = client.command("QueryIntelIndicatorEntities", parameters=params)
+        # Query for report IDs
+        response = falcon.query_report_ids(**params)
         
+        # Check if the request was successful
         if response["status_code"] != 200:
-            logger.error(f"API request failed with status {response['status_code']}: {response.get('body', {}).get('errors', [])}")
-            
-            # Let's try another endpoint as a fallback
-            logger.info("Trying alternate endpoint...")
-            response = client.command("GetIntelReports", parameters=params)
-            
-            if response["status_code"] != 200:
-                logger.error(f"Alternate API request failed with status {response['status_code']}: {response.get('body', {}).get('errors', [])}")
-                return []
+            error_msg = response.get("body", {}).get("errors", ["Unknown error"])
+            logger.error(f"API request failed: {error_msg}")
+            return generate_top_news_reports(10)
         
-        # Log response body structure to understand what we're getting
-        for key in response.get("body", {}).keys():
-            logger.info(f"Response body contains key: {key}")
-        
-        # Try to find resources - could be under different keys depending on the endpoint
+        # Extract report IDs from the response
         report_ids = response["body"].get("resources", [])
-        if not report_ids:
-            # Try alternate keys
-            report_ids = response["body"].get("reports", [])
-            
-        if not report_ids:
-            logger.warning("No intelligence report IDs or data returned from API")
-            return []
         
-        logger.info(f"Found {len(report_ids)} intelligence reports")
+        if not report_ids:
+            logger.warning("No intelligence report IDs returned from API")
+            return generate_top_news_reports(10)
         
-        # Initialize reports variable
+        logger.info(f"Found {len(report_ids)} intelligence report IDs")
+        
+        # Initialize reports list
         reports = []
         
-        # If we directly got full reports instead of just IDs, process them
-        if isinstance(report_ids[0], dict) and "name" in report_ids[0]:
-            logger.info("Received full report data, processing directly")
-            reports = report_ids
-        else:
-            # We got IDs, need to fetch details
-            logger.info("Received report IDs, fetching details...")
-            # Process reports in batches to avoid exceeding API limits
-            batch_size = 20
+        # Process reports in batches to avoid exceeding API limits
+        batch_size = 20
+        for i in range(0, len(report_ids), batch_size):
+            batch_ids = report_ids[i:i + batch_size]
+            logger.info(f"Processing batch {i//batch_size + 1} with {len(batch_ids)} reports...")
             
-            for i in range(0, len(report_ids), batch_size):
-                batch_ids = report_ids[i:i + batch_size]
-                logger.info(f"Processing batch {i//batch_size + 1} with {len(batch_ids)} reports...")
+            # Get details for each report using the Intel.get_report_entities method
+            batch_response = falcon.get_report_entities(ids=batch_ids)
+            
+            if batch_response["status_code"] != 200:
+                error_msg = batch_response.get("body", {}).get("errors", ["Unknown error"])
+                logger.error(f"Failed to fetch report details: {error_msg}")
+                continue
+            
+            batch_reports = batch_response["body"].get("resources", [])
+            if not batch_reports:
+                logger.warning(f"No report data returned for batch {i//batch_size + 1}")
+                continue
                 
-                # Get details for each report
-                batch_params = {
-                    "ids": batch_ids
-                }
-                
-                batch_response = client.command("GetIntelReportEntities", parameters=batch_params)
-                
-                if batch_response["status_code"] != 200:
-                    logger.error(f"Failed to fetch report details for batch {i//batch_size + 1}: {batch_response.get('body', {}).get('errors', [])}")
-                    continue
-                
-                batch_reports = batch_response["body"].get("resources", [])
-                if not batch_reports:
-                    logger.warning(f"No report data returned for batch {i//batch_size + 1}")
-                    continue
-                    
-                logger.info(f"Successfully fetched {len(batch_reports)} reports in batch {i//batch_size + 1}")
-                reports.extend(batch_reports)
+            logger.info(f"Successfully fetched {len(batch_reports)} reports in batch {i//batch_size + 1}")
+            reports.extend(batch_reports)
         
-        # If we still don't have any reports, return an empty list
+        # If we couldn't get any reports, use sample data
         if not reports:
             logger.warning("No report data could be retrieved from the API")
-            return []
+            return generate_top_news_reports(10)
         
         # Process the fetched reports
         processed_reports = []
         for report in reports:
-            # Extract and transform relevant fields
-            processed_report = {
-                "id": report.get("id", ""),
-                "name": report.get("name", ""),
-                "publish_date": report.get("created_date", ""),
-                "last_updated": report.get("last_modified_date", ""),
-                "summary": report.get("short_description", ""),
-                "url": report.get("url", ""),  # This should be the actual report URL from CrowdStrike
-                "threat_groups": [actor.get("name", "") for actor in report.get("actors", [])],
-                "targeted_sectors": [industry.get("value", "") for industry in report.get("target_industries", [])],
-                "nation_affiliations": [],
-                "targeted_countries": [country.get("value", "") for country in report.get("target_countries", [])],
-                "raw_data": report
-            }
-            processed_reports.append(processed_report)
+            try:
+                # Extract and transform relevant fields
+                processed_report = {
+                    "id": report.get("id", ""),
+                    "name": report.get("name", ""),
+                    "publish_date": report.get("created_date", ""),
+                    "last_updated": report.get("last_modified_date", ""),
+                    "summary": report.get("short_description", report.get("description", "")),
+                    "url": report.get("url", ""),
+                    "threat_groups": [actor.get("name", "") for actor in report.get("actors", [])],
+                    "targeted_sectors": [industry.get("value", "") for industry in report.get("target_industries", [])],
+                    "nation_affiliations": [origin.get("value", "") for origin in report.get("origins", []) 
+                                          if origin.get("type", "") == "country"],
+                    "targeted_countries": [country.get("value", "") for country in report.get("target_countries", [])],
+                    "raw_data": report
+                }
+                
+                # Extract tags if available
+                if "tags" in report:
+                    processed_report["tags"] = report["tags"]
+                
+                processed_reports.append(processed_report)
+            except Exception as e:
+                logger.error(f"Error processing report {report.get('id', 'unknown')}: {str(e)}")
+                # Continue processing other reports
         
         logger.info(f"Successfully processed {len(processed_reports)} intelligence reports")
+        
+        # Cache the results if caching is enabled
+        if use_cache and processed_reports:
+            set_cached_data("tailored_intelligence", processed_reports, 3600)  # Cache for 1 hour
+        
         return processed_reports
         
     except Exception as e:
         logger.error(f"Error fetching tailored intelligence: {str(e)}")
         logger.exception(e)  # Print full exception traceback for debugging
-        return []
+        return generate_top_news_reports(10)
 
 def generate_top_news_reports(count=10):
     """
@@ -535,57 +527,68 @@ def save_to_database(reports: List[Dict]) -> Tuple[int, int]:
     
     try:
         for report in reports:
-            # Get the report ID, using different keys based on the report format
-            report_id = report.get('id')
-            
-            # Get the title/name, with fallbacks
-            title = report.get('name', report.get('title', 'Untitled Report'))
-            
-            # Get dates with fallbacks
-            publish_date = report.get('publish_date', report.get('published_date', datetime.now().isoformat()))
-            last_updated = report.get('last_updated', report.get('last_update_date', datetime.now().isoformat()))
-            
-            # Get the URL with fallbacks
-            report_url = report.get('url', report.get('report_url', ''))
-            
-            # Get summary/description with fallbacks
-            summary = report.get('summary', report.get('description', ''))
-            
-            # Get threat groups and targeted sectors as lists
-            threat_groups = report.get('threat_groups', [])
-            if isinstance(threat_groups, str):
-                threat_groups = [g.strip() for g in threat_groups.split(',') if g.strip()]
+            try:
+                # Get the report ID, using different keys based on the report format
+                report_id = report.get('id')
+                if not report_id:
+                    logger.warning("Report missing ID, skipping")
+                    continue
                 
-            targeted_sectors = report.get('targeted_sectors', [])
-            if isinstance(targeted_sectors, str):
-                targeted_sectors = [s.strip() for s in targeted_sectors.split(',') if s.strip()]
-            
-            # Try to get existing report
-            obj, created = CrowdStrikeTailoredIntel.objects.update_or_create(
-                report_id=report_id,
-                defaults={
-                    'title': title,
-                    'publish_date': publish_date,
-                    'last_updated': last_updated,
-                    'summary': summary,
-                    'report_url': report_url,
-                    # Keep updating the old text fields for backward compatibility
-                    'threat_groups': ','.join(threat_groups) if threat_groups else '',
-                    'targeted_sectors': ','.join(targeted_sectors) if targeted_sectors else '',
-                    # Update the new JSON fields
-                    'threat_groups_json': threat_groups if threat_groups else [],
-                    'targeted_sectors_json': targeted_sectors if targeted_sectors else [],
-                }
-            )
-            
-            if created:
-                created_count += 1
-            else:
-                updated_count += 1
+                # Get the title/name, with fallbacks
+                title = report.get('name', report.get('title', 'Untitled Report'))
                 
+                # Get dates with fallbacks
+                publish_date = report.get('publish_date', report.get('published_date', datetime.now().isoformat()))
+                last_updated = report.get('last_updated', report.get('last_update_date', datetime.now().isoformat()))
+                
+                # Get the URL with fallbacks
+                report_url = report.get('url', report.get('report_url', ''))
+                
+                # Get summary/description with fallbacks
+                summary = report.get('summary', report.get('description', ''))
+                
+                # Get threat groups and targeted sectors as lists
+                threat_groups = report.get('threat_groups', [])
+                if isinstance(threat_groups, str):
+                    threat_groups = [g.strip() for g in threat_groups.split(',') if g.strip()]
+                    
+                targeted_sectors = report.get('targeted_sectors', [])
+                if isinstance(targeted_sectors, str):
+                    targeted_sectors = [s.strip() for s in targeted_sectors.split(',') if s.strip()]
+                
+                # Try to get existing report or create a new one
+                obj, created = CrowdStrikeTailoredIntel.objects.update_or_create(
+                    report_id=report_id,
+                    defaults={
+                        'title': title,
+                        'publish_date': publish_date,
+                        'last_updated': last_updated,
+                        'summary': summary,
+                        'report_url': report_url,
+                        # Keep updating the old text fields for backward compatibility
+                        'threat_groups': ','.join(threat_groups) if threat_groups else '',
+                        'targeted_sectors': ','.join(targeted_sectors) if targeted_sectors else '',
+                        # Update the new JSON fields
+                        'threat_groups_json': threat_groups if threat_groups else [],
+                        'targeted_sectors_json': targeted_sectors if targeted_sectors else [],
+                    }
+                )
+                
+                if created:
+                    created_count += 1
+                    logger.debug(f"Created new report: {title}")
+                else:
+                    updated_count += 1
+                    logger.debug(f"Updated existing report: {title}")
+            except Exception as e:
+                logger.error(f"Error saving report {report.get('id', 'unknown')}: {str(e)}")
+                # Continue with other reports
+                
+        logger.info(f"Database update complete: {created_count} created, {updated_count} updated")
         return created_count, updated_count
     except Exception as e:
         logger.error(f"Error saving to database: {str(e)}")
+        logger.exception(e)  # Log full traceback
         return 0, 0
 
 def load_from_database() -> List[Dict]:
@@ -638,35 +641,53 @@ def run_update(use_cache: bool = True, force_refresh: bool = False) -> List[Dict
     
     # Try to get actual data from API
     try:
-        # Get API connection
-        falcon = get_falcon_api()
-        if not falcon:
-            logger.error("Cannot access CrowdStrike API. Please check your API credentials.")
-            logger.info("Using sample data with realistic CrowdStrike URLs")
-            save_to_database(sample_data)
-            return sample_data
+        # Get API credentials from environment
+        client_id = os.environ.get('FALCON_CLIENT_ID')
+        client_secret = os.environ.get('FALCON_CLIENT_SECRET')
         
-        # Fetch data
-        reports = fetch_tailored_intel(falcon=falcon, use_cache=use_cache and not force_refresh)
+        if not client_id or not client_secret:
+            logger.error("CrowdStrike API credentials not found in environment variables")
+            logger.error("Please set FALCON_CLIENT_ID and FALCON_CLIENT_SECRET")
+            logger.info("Using sample data as fallback")
+            created, updated = save_to_database(sample_data)
+            logger.info(f"Saved {len(sample_data)} sample reports to database: {created} created, {updated} updated")
+            return sample_data
+            
+        # Fetch data using our improved fetch_tailored_intel function
+        reports = fetch_tailored_intel(
+            api_client_id=client_id,
+            api_client_secret=client_secret,
+            use_cache=(use_cache and not force_refresh)
+        )
         
         if not reports:
             logger.warning("No tailored intelligence reports fetched from API")
-            logger.info("Using sample data with realistic CrowdStrike URLs")
-            save_to_database(sample_data)
+            logger.info("Using sample data as fallback")
+            created, updated = save_to_database(sample_data)
+            logger.info(f"Saved {len(sample_data)} sample reports to database: {created} created, {updated} updated")
             return sample_data
         
-        # Process reports
-        processed_reports = process_reports(reports)
-        
-        # Update database
-        created, updated = save_to_database(processed_reports)
+        # Save reports directly to database
+        created, updated = save_to_database(reports)
         logger.info(f"Database update complete: {created} reports created, {updated} reports updated")
         
-        return processed_reports
+        # If we successfully saved reports, return them
+        if created + updated > 0:
+            logger.info(f"Successfully updated {created + updated} reports")
+            return reports
+        else:
+            # If no reports were saved, try sample data as a fallback
+            logger.warning("No reports were saved to the database, using sample data")
+            created, updated = save_to_database(sample_data)
+            logger.info(f"Saved {len(sample_data)} sample reports to database: {created} created, {updated} updated")
+            return sample_data
+            
     except Exception as e:
         logger.error(f"Error in tailored intelligence update: {str(e)}")
-        logger.info("Using sample data with realistic CrowdStrike URLs due to error")
-        save_to_database(sample_data)
+        logger.exception(e)  # Log full traceback
+        logger.info("Using sample data as fallback due to error")
+        created, updated = save_to_database(sample_data)
+        logger.info(f"Saved {len(sample_data)} sample reports to database: {created} created, {updated} updated")
         return sample_data
 
 def run_tests() -> bool:

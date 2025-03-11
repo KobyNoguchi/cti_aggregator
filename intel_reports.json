@@ -1,0 +1,151 @@
+[
+  {
+    "id": 10231770,
+    "name": "CSA-231770 LABYRINTH CHOLLIMA Targets North American Manufacturing Sector using Stackyflate and HTTP HOPLIGHT",
+    "publish_date": 1741646351,
+    "last_updated": 1741646392,
+    "summary": "LABYRINTH CHOLLIMA Targets North American Manufacturing Sector using Stackeyflate Variants and HTTP HOPLIGHT\n\nPublish Date: 8 December 2023\n\nSummary\n\nIn December 2023, CrowdStrike Falcon Complete observed malicious activity within the environment of a North American manufacturing sector entity. Compromised credentials from a managed service prov...",
+    "url": "https://falcon.crowdstrike.com/intelligence/reports/csa-231770",
+    "threat_groups": [
+      "LABYRINTH CHOLLIMA"
+    ],
+    "targeted_sectors": [
+      "Manufacturing"
+    ],
+    "nation_affiliations": [],
+    "targeted_countries": [
+      "Americas",
+      "North America"
+    ]
+  },
+  {
+    "id": 2025006,
+    "name": "CSIT-25006 Adversary Debut: NIMBLE SPIDER Exploits Multiple Vulnerabilities to Facilitate Initial Access Opportunities",
+    "publish_date": 1741646159,
+    "last_updated": 1741646277,
+    "summary": "Topic: eCrime || Adversary: NIMBLE SPIDER, FROZEN SPIDER, RECESS SPIDER\n\nKey Points\nNIMBLE SPIDER is an eCrime adversary who has collaborated with or provided access to several other threat actors, including the Big Game Hunting (BGH) adversaries RECESS SPIDER and FROZEN SPIDER. The adversary has likely been active since at least June 2022.\nThe ...",
+    "url": "https://falcon.crowdstrike.com/intelligence/reports/csit-25006",
+    "threat_groups": [
+      "RECESS SPIDER",
+      "FROZEN SPIDER",
+      "NIMBLE SPIDER"
+    ],
+    "targeted_sectors": [
+      "Academic",
+      "Industrials and Engineering",
+      "Manufacturing",
+      "Logistics",
+      "Retail",
+      "Government",
+      "Technology",
+      "Media",
+      "Telecommunications",
+      "Healthcare",
+      "Energy",
+      "Local Government",
+      "Pharmaceutical",
+      "Food and Beverage"
+    ],
+    "nation_affiliations": [],
+    "targeted_countries": [
+      "South Asia",
+      "Southeast Asia",
+      "United States",
+      "Americas",
+      "Denmark",
+      "Asia",
+      "Europe",
+      "United Kingdom",
+      "Singapore",
+      "Philippines",
+      "Japan",
+      "India",
+      "Western Europe",
+      "North America",
+      "Thailand",
+      "East Asia",
+      "Germany",
+      "Northern Europe"
+    ]
+  },
+  {
+    "id": 10250045,
+    "name": "CSA-250045 Unknown Actor Changes Route53 Settings to Access AWS Root User",
+    "publish_date": 1741645996,
+    "last_updated": 1741646076,
+    "summary": "Topic: Amazon Web Services || Target Industry: Manufacturing || Target Geography: North America\n\nSummary\n\nIn Q3 2024, CrowdStrike Services responded to an incident in which an unknown threat actor compromised a North America-based manufacturing company. The actor used a stolen Amazon Web Services (AWS) access key to sign in to the AWS console, p...",
+    "url": "https://falcon.crowdstrike.com/intelligence/reports/csa-250045",
+    "threat_groups": [],
+    "targeted_sectors": [
+      "Manufacturing"
+    ],
+    "nation_affiliations": [],
+    "targeted_countries": [
+      "Americas",
+      "North America"
+    ]
+  },
+  {
+    "id": 10250218,
+    "name": "CSA-250218 BOUNTY JACKAL Continues Widespread DDoS Attacks Against Entities Based in Perceived Ukraine-Allied Countries",
+    "publish_date": 1741645778,
+    "last_updated": 1741645894,
+    "summary": "Topic: Nationalist Hacktivism || Adversary: BOUNTY JACKAL || Target Geography: Multiple\n\nSummary\n\nBetween 1 January 2025 and 12 February 2025, pro-Russia hacktivist group BOUNTY JACKAL conducted distributed denial-of-service (DDoS) campaigns against government and private sector entities in Europe, North America, and Asia. The targeting and rela...",
+    "url": "https://falcon.crowdstrike.com/intelligence/reports/csa-250218",
+    "threat_groups": [
+      "BOUNTY JACKAL"
+    ],
+    "targeted_sectors": [
+      "Opportunistic"
+    ],
+    "nation_affiliations": [],
+    "targeted_countries": [
+      "Italy",
+      "Canada",
+      "Taiwan",
+      "Spain",
+      "Poland",
+      "Europe",
+      "Ukraine",
+      "Americas",
+      "Finland",
+      "Asia",
+      "Palestine",
+      "Western Europe",
+      "North America",
+      "East Asia",
+      "Germany",
+      "France",
+      "Middle East",
+      "Eastern Europe",
+      "Northern Europe",
+      "Southern Europe"
+    ]
+  },
+  {
+    "id": 231005,
+    "name": "CSID-25008 Elite Intrusion Digest: 14 - 20 February 2025",
+    "publish_date": 1741644407,
+    "last_updated": 1741644407,
+    "summary": "The Elite Intrusion Digest is a summary of hands-on interactive intrusions uncovered by Falcon OverWatch. Where applicable, summaries are enriched with CrowdStrike Intelligence analysis or correlated reports. This Digest does not cover the full breadth of activity observed by OverWatch; rather, it focuses only on those intrusions that feature a hands-on-keyboard threat actor. This information repr...",
+    "url": "https://falcon.crowdstrike.com/intelligence/reports/csid-25008-2/",
+    "threat_groups": [],
+    "targeted_sectors": [
+      "Hospitality",
+      "Financial Services",
+      "Transportation",
+      "Technology",
+      "Telecommunications",
+      "Real Estate"
+    ],
+    "nation_affiliations": [],
+    "targeted_countries": [
+      "South Asia",
+      "Southeast Asia",
+      "Americas",
+      "Asia",
+      "North America",
+      "East Asia"
+    ]
+  }
+]
