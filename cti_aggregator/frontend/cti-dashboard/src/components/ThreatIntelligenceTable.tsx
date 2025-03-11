@@ -1,7 +1,7 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
-import { fetchIntelligenceArticles, refreshIntelligence, IntelligenceArticle } from '@/lib/api'
+import React, { useState, useEffect, useCallback } from 'react'
+import { fetchIntelligenceArticles, refreshIntelligence, IntelligenceArticle, isErrorResponse, ApiErrorResponse } from '@/lib/api'
 import { format } from 'date-fns'
 import {
   Table,
@@ -19,60 +19,103 @@ import {
   RefreshCw, 
   ExternalLink, 
   Search, 
-  AlertCircle 
+  AlertCircle,
+  AlertTriangle,
+  Wifi
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 export default function ThreatIntelligenceTable() {
   const [articles, setArticles] = useState<IntelligenceArticle[]>([]);
   const [filteredArticles, setFilteredArticles] = useState<IntelligenceArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<'network' | 'server' | 'data' | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSource, setSelectedSource] = useState('all');
   const [sources, setSources] = useState<string[]>([]);
+  const [dataFetched, setDataFetched] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
-  // Fetch articles on component mount
+  // Fetch articles on component mount (only on client-side)
   useEffect(() => {
-    fetchData();
-  }, []);
+    // Only run data fetching on the client to avoid hydration issues
+    if (typeof window !== 'undefined' && !dataFetched) {
+      fetchData();
+      setDataFetched(true);
+    }
+  }, [dataFetched]);
 
   // Filter articles when search term or selected source changes
   useEffect(() => {
-    filterArticles();
+    if (articles && articles.length > 0) {
+      filterArticles();
+    }
   }, [searchTerm, selectedSource, articles]);
 
   // Fetch data from the API
-  const fetchData = async () => {
+  const fetchData = async (skipCache: boolean = false) => {
     try {
       setLoading(true);
-      const data = await fetchIntelligenceArticles();
-      setArticles(data);
-      
-      // Extract unique sources for filter dropdown
-      const uniqueSources = [...new Set(data.map(article => article.source))];
-      setSources(uniqueSources);
-      
       setError(null);
+      setErrorType(null);
+      setRetrying(false);
+      
+      const response = await fetchIntelligenceArticles(skipCache);
+      
+      // Check if the response is an error
+      if (isErrorResponse(response)) {
+        setError(response.message || 'Failed to fetch intelligence articles');
+        
+        // Set error type based on status code
+        if (response.status >= 500) {
+          setErrorType('server');
+        } else if (response.status === 408 || response.status === 503) {
+          setErrorType('network');
+        } else {
+          setErrorType('data');
+        }
+        
+        setArticles([]);
+      } else {
+        // We know it's an array of IntelligenceArticle now
+        setArticles(response);
+        
+        // Extract unique sources for filter dropdown
+        const uniqueSources = [...new Set(response.map(article => article.source))];
+        setSources(uniqueSources);
+        
+        setError(null);
+        setErrorType(null);
+      }
     } catch (err) {
       setError('Failed to fetch intelligence articles. Please try again later.');
+      setErrorType('network');
       console.error(err);
+      setArticles([]);
     } finally {
       setLoading(false);
     }
   };
+
+  // Handle retry button click
+  const handleRetry = useCallback(async () => {
+    setRetrying(true);
+    await fetchData(true); // Skip cache on retry
+  }, []);
 
   // Handle refresh button click
   const handleRefresh = async () => {
     try {
       setRefreshing(true);
       await refreshIntelligence();
-      await fetchData();
+      await fetchData(true); // Skip cache on refresh
     } catch (err) {
       setError('Failed to refresh intelligence data. Please try again later.');
+      setErrorType('server');
       console.error(err);
     } finally {
       setRefreshing(false);
@@ -81,6 +124,11 @@ export default function ThreatIntelligenceTable() {
 
   // Filter articles based on search term and selected source
   const filterArticles = () => {
+    if (!Array.isArray(articles)) {
+      setFilteredArticles([]);
+      return;
+    }
+    
     let filtered = [...articles];
     
     if (selectedSource !== 'all') {
@@ -101,6 +149,10 @@ export default function ThreatIntelligenceTable() {
   // Format date for display
   const formatDate = (dateString: string) => {
     try {
+      // Use a fixed timestamp for server-side rendering to avoid hydration errors
+      if (typeof window === 'undefined') {
+        return 'Loading date...';
+      }
       return format(new Date(dateString), 'PPP');
     } catch (error) {
       return 'Invalid date';
@@ -119,6 +171,63 @@ export default function ThreatIntelligenceTable() {
     };
     
     return sourceColors[source] || 'bg-gray-50 text-gray-600 border-gray-200';
+  };
+
+  // Render different error alerts based on error type
+  const renderErrorAlert = () => {
+    if (!error) return null;
+    
+    switch (errorType) {
+      case 'network':
+        return (
+          <Alert variant="destructive" className="mb-4">
+            <Wifi className="h-4 w-4" />
+            <AlertTitle>Connection Error</AlertTitle>
+            <AlertDescription>
+              {error}
+              <div className="mt-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleRetry} 
+                  disabled={retrying}
+                >
+                  {retrying ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                  Retry Connection
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        );
+      case 'server':
+        return (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Server Error</AlertTitle>
+            <AlertDescription>
+              {error}
+              <div className="mt-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleRetry} 
+                  disabled={retrying}
+                >
+                  {retrying ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                  Retry Request
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        );
+      default:
+        return (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        );
+    }
   };
 
   return (
@@ -162,12 +271,7 @@ export default function ThreatIntelligenceTable() {
         </div>
       </CardHeader>
       <CardContent>
-        {error && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        {error && renderErrorAlert()}
         
         {loading ? (
           <div className="flex justify-center items-center py-8">
@@ -177,7 +281,7 @@ export default function ThreatIntelligenceTable() {
           <div className="rounded-md border">
             <Table>
               <TableCaption>
-                {filteredArticles.length > 0 
+                {filteredArticles && filteredArticles.length > 0 
                   ? `Showing ${filteredArticles.length} of ${articles.length} articles`
                   : 'No matching articles found'
                 }
@@ -191,7 +295,7 @@ export default function ThreatIntelligenceTable() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredArticles.length > 0 ? (
+                {filteredArticles && filteredArticles.length > 0 ? (
                   filteredArticles.map((article) => (
                     <TableRow key={article.id}>
                       <TableCell>

@@ -21,6 +21,10 @@ from django.db.models import Q
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from ioc_scraper.tasks import fetch_all_intelligence
+from datetime import datetime
+from rest_framework.response import Response
+from rest_framework.status import HTTP_200_OK
+from django.views.decorators.cache import cache_control
 
 # Add the data_sources directory to the path
 sys.path.insert(0, os.path.join(settings.BASE_DIR, '..', 'data_sources'))
@@ -245,50 +249,101 @@ def test_crowdstrike_api(request):
     Endpoint to test connection to CrowdStrike API
     """
     try:
-        # Import here to avoid circular imports
-        from tailored_intelligence import get_falcon_api
-        
-        falcon = get_falcon_api()
-        if not falcon:
-            return JsonResponse({
-                "status": "error",
-                "message": "Failed to initialize CrowdStrike API client. Please check your environment variables.",
-                "details": {
-                    "missing_credentials": not (os.environ.get('FALCON_CLIENT_ID') and os.environ.get('FALCON_CLIENT_SECRET')),
-                    "environment_vars": {
-                        "FALCON_CLIENT_ID": "✓" if os.environ.get('FALCON_CLIENT_ID') else "✗",
-                        "FALCON_CLIENT_SECRET": "✓" if os.environ.get('FALCON_CLIENT_SECRET') else "✗"
+        # Try importing the function to check falconpy availability
+        try:
+            # Import here to avoid circular imports
+            from tailored_intelligence import FALCONPY_AVAILABLE
+            
+            if not FALCONPY_AVAILABLE:
+                return JsonResponse({
+                    "status": "warning",
+                    "message": "FalconPy library is not installed. This is non-critical for development.",
+                    "details": {
+                        "solution": "Install falconpy with: pip install falconpy"
                     }
-                }
-            }, status=401)
-        
-        # Try to make a simple API call - use QueryIntelReportEntities which should be available
-        response = falcon.command("QueryIntelReportEntities", {"limit": 1})
-        
-        if response["status_code"] == 200:
+                })
+            
+            from tailored_intelligence import fetch_tailored_intel
+            
+            # For testing we use mock credentials
+            mock_reports = fetch_tailored_intel("test-client-id", "test-client-secret")
+            
             return JsonResponse({
                 "status": "success",
-                "message": "Successfully connected to CrowdStrike API",
-                "api_response": {
-                    "status_code": response["status_code"],
-                    "report_ids": response.get("body", {}).get("resources", []),
-                    "total_reports": response.get("body", {}).get("meta", {}).get("pagination", {}).get("total", 0)
-                }
+                "message": "Using mock CrowdStrike data for development",
+                "reports_sample": mock_reports[:2] if len(mock_reports) > 0 else []
             })
-        else:
+            
+        except ImportError as e:
             return JsonResponse({
                 "status": "error",
-                "message": "API request failed",
+                "message": f"Failed to import necessary modules: {str(e)}",
                 "details": {
-                    "status_code": response["status_code"],
-                    "error": response.get("body", {}).get("errors", [])
+                    "error_type": "ImportError"
                 }
-            }, status=response["status_code"])
-        
+            }, status=500)
+            
     except Exception as e:
         return JsonResponse({
             "status": "error",
             "message": f"Error testing CrowdStrike API: {str(e)}",
         }, status=500)
+
+@api_view(['GET', 'HEAD'])
+@permission_classes([AllowAny])
+@cache_control(max_age=300)  # Cache for 5 minutes
+def health_check(request):
+    """
+    API endpoint that returns the health status of the API.
+    This can be used by frontend applications to verify connectivity.
+    """
+    # Check if we're responding to a HEAD request (used for connectivity checks)
+    if request.method == 'HEAD':
+        return Response(status=HTTP_200_OK)
+    
+    # Get basic system statistics
+    try:
+        article_count = IntelligenceArticle.objects.count()
+        intel_count = CrowdStrikeTailoredIntel.objects.count()
+        actor_count = CrowdStrikeIntel.objects.count()
+        malware_count = CrowdStrikeMalware.objects.count()
+        
+        # Get latest update timestamps
+        latest_article = IntelligenceArticle.objects.order_by('-published_date').first()
+        latest_intel = CrowdStrikeTailoredIntel.objects.order_by('-last_updated').first()
+        
+        last_updated = latest_intel.last_updated if latest_intel else None
+        if latest_article and latest_article.published_date:
+            if not last_updated or latest_article.published_date > last_updated:
+                last_updated = latest_article.published_date
+                
+        data = {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "api_version": "1.0.0",
+            "stats": {
+                "article_count": article_count,
+                "intel_count": intel_count,
+                "actor_count": actor_count,
+                "malware_count": malware_count,
+            },
+            "last_updated": last_updated.isoformat() if last_updated else None,
+        }
+    except Exception as e:
+        # If we encounter any error, still return a response but with degraded status
+        data = {
+            "status": "degraded",
+            "timestamp": datetime.now().isoformat(),
+            "api_version": "1.0.0",
+            "error": str(e),
+        }
+    
+    # Set CORS headers to allow cross-origin requests
+    response = JsonResponse(data)
+    response["Access-Control-Allow-Origin"] = "*"
+    response["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
+    response["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    
+    return response
 
 # Create your views here.

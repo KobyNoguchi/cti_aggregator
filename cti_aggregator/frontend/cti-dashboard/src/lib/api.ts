@@ -117,7 +117,10 @@ export interface CrowdStrikeVulnerability {
 }
 
 // Base API URL - was hardcoded, now use environment variable with fallback
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+const API_BASE_URL = 
+  typeof window !== 'undefined' && process.env.NEXT_PUBLIC_API_URL 
+    ? process.env.NEXT_PUBLIC_API_URL 
+    : 'http://localhost:8000/api';
 
 // Cache configuration
 interface CacheConfig {
@@ -133,7 +136,7 @@ interface CacheItem<T> {
 
 // Cache configuration - can be customized based on environment
 const cacheConfig: CacheConfig = {
-  enabled: true,
+  enabled: typeof window !== 'undefined', // Only enable cache in browser environment
   defaultTTL: 5 * 60 * 1000, // 5 minutes default cache TTL
 };
 
@@ -144,6 +147,10 @@ const CACHE_NAMESPACE = 'cti_aggr_cache:';
  * Check if browser storage is available
  */
 function isStorageAvailable(): boolean {
+  if (typeof window === 'undefined') {
+    return false; // Not in browser environment
+  }
+  
   try {
     const testKey = '__storage_test__';
     localStorage.setItem(testKey, testKey);
@@ -155,9 +162,9 @@ function isStorageAvailable(): boolean {
 }
 
 /**
- * Get data from cache
+ * Get data from cache, optionally ignoring expiration
  */
-function getFromCache<T>(key: string): T | null {
+function getFromCache<T>(key: string, ignoreExpiry: boolean = false): T | null {
   if (!cacheConfig.enabled || !isStorageAvailable()) {
     return null;
   }
@@ -167,12 +174,14 @@ function getFromCache<T>(key: string): T | null {
     if (!cachedItem) return null;
     
     const item: CacheItem<T> = JSON.parse(cachedItem);
-    const now = Date.now();
     
-    // Check if cache has expired
-    if (now > item.expiry) {
-      localStorage.removeItem(CACHE_NAMESPACE + key);
-      return null;
+    if (!ignoreExpiry) {
+      const now = Date.now();
+      
+      // Check if cache has expired
+      if (now > item.expiry) {
+        return null;
+      }
     }
     
     return item.data;
@@ -244,6 +253,33 @@ export function isErrorResponse<T>(response: T[] | ApiErrorResponse): response i
   return (response as ApiErrorResponse).isError === true;
 }
 
+// Add a function to check if the API is reachable
+async function isApiReachable(): Promise<boolean> {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  
+  try {
+    // Use a simple HEAD request to check if the API is reachable
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+    
+    const response = await fetch(`${API_BASE_URL}/health-check/`, {
+      method: 'HEAD',
+      signal: controller.signal,
+    }).catch(() => null);
+    
+    clearTimeout(timeoutId);
+    return !!response && response.ok;
+  } catch (error) {
+    console.error('API reachability check failed:', error);
+    return false;
+  }
+}
+
+// Cache for API reachability status to avoid multiple checks
+let apiReachableCache: { status: boolean; timestamp: number } | null = null;
+
 // Generic fetch function with consistent error handling and caching
 async function fetchFromApi<T>(
   endpoint: string, 
@@ -253,8 +289,11 @@ async function fetchFromApi<T>(
   // Generate a cache key based on the endpoint
   const cacheKey = endpoint.replace(/[^a-zA-Z0-9]/g, '_');
   
-  // Try to get from cache first if caching is enabled
-  if (cacheTTL !== null) {
+  // Skip cache if we're in a server environment
+  const shouldUseCache = typeof window !== 'undefined' && cacheTTL !== null;
+  
+  // Try to get from cache first if caching is enabled and we're in browser
+  if (shouldUseCache) {
     const cachedData = getFromCache<T[]>(cacheKey);
     if (cachedData) {
       console.log(`Using cached data for ${endpoint}`);
@@ -262,11 +301,62 @@ async function fetchFromApi<T>(
     }
   }
   
+  // Handle SSR - return empty array during server rendering to avoid hydration mismatch
+  if (typeof window === 'undefined') {
+    console.log(`Skipping API fetch during SSR for ${endpoint}`);
+    return [] as T[];
+  }
+  
+  // Check if API is reachable (only check once every 30 seconds)
+  const now = Date.now();
+  if (!apiReachableCache || now - apiReachableCache.timestamp > 30000) {
+    apiReachableCache = {
+      status: await isApiReachable(),
+      timestamp: now
+    };
+  }
+  
+  // If API is known to be unreachable, return cached data if available or an error
+  if (!apiReachableCache.status) {
+    // Try to get stale data from cache as fallback
+    const staleData = getFromCache<T[]>(cacheKey, true);
+    if (staleData) {
+      console.log(`API unreachable, using stale cached data for ${endpoint}`);
+      return staleData;
+    }
+    
+    return createErrorResponse(
+      503,
+      "API server is currently unreachable. Please check your network connection and try again later."
+    );
+  }
+  
   // If not in cache or caching disabled, fetch from API
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`);
+    // Set timeout for fetch requests
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      signal: controller.signal,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      }
+    });
+    
+    clearTimeout(timeoutId);
     
     if (!response.ok) {
+      // If we got a 404, check if we have stale data in cache
+      if (response.status === 404 && shouldUseCache) {
+        const staleData = getFromCache<T[]>(cacheKey, true);
+        if (staleData) {
+          console.log(`Endpoint not found, using stale cached data for ${endpoint}`);
+          return staleData;
+        }
+      }
+      
       return createErrorResponse(
         response.status,
         `${errorMessage} (${response.status}: ${response.statusText})`
@@ -275,17 +365,62 @@ async function fetchFromApi<T>(
     
     const data = await response.json();
     
+    // Validate data is an array before proceeding
+    if (!Array.isArray(data)) {
+      console.error(`Expected array but got:`, data);
+      
+      // Try to get stale data from cache as fallback
+      if (shouldUseCache) {
+        const staleData = getFromCache<T[]>(cacheKey, true);
+        if (staleData) {
+          console.log(`Invalid data format, using stale cached data for ${endpoint}`);
+          return staleData;
+        }
+      }
+      
+      return createErrorResponse(
+        500,
+        `${errorMessage}: Invalid data format received from server`
+      );
+    }
+    
     // Save successful response to cache if caching is enabled
-    if (cacheTTL !== null && !isErrorResponse(data)) {
+    if (shouldUseCache && Array.isArray(data)) {
       saveToCache(cacheKey, data, cacheTTL);
     }
     
     return data;
   } catch (error) {
     console.error(`Error fetching from ${endpoint}:`, error);
+    
+    // Handle AbortError specifically for timeouts
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return createErrorResponse(
+        408,
+        `Request timed out: The server took too long to respond. Please try again later.`
+      );
+    }
+    
+    // Try to get stale data from cache as fallback
+    if (shouldUseCache) {
+      const staleData = getFromCache<T[]>(cacheKey, true);
+      if (staleData) {
+        console.log(`Error in fetch, using stale cached data for ${endpoint}`);
+        return staleData;
+      }
+    }
+    
+    // Provide more specific error messages based on error type
+    let errorMsg = `${errorMessage}: `;
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      errorMsg += 'Network error - Please check your internet connection or if the server is running.';
+    } else {
+      errorMsg += error instanceof Error ? error.message : 'Unknown error';
+    }
+    
     return createErrorResponse(
       500,
-      `${errorMessage}: ${error instanceof Error ? error.message : 'Unknown error'}`
+      errorMsg
     );
   }
 }

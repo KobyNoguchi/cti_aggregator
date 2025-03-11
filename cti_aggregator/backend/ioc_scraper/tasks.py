@@ -1,13 +1,32 @@
 import requests
 from .models import Vulnerability, IntelligenceArticle
-from celery import shared_task, group
-from datetime import datetime 
+from celery import shared_task, group, chain, chord
+from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 import logging
 from django.utils import timezone
+from django.db.models import Count
 from ioc_scraper.models import CrowdStrikeIntel, CrowdStrikeMalware
 import sys
 import os
+import json
+from django.db import connection
+from django.db.models import Max, Q
+from django.core.cache import cache
+from celery.result import AsyncResult
+# Try different import paths for inspect
+try:
+    from celery.app.control import inspect
+except ImportError:
+    try:
+        from celery.control import inspect
+    except ImportError:
+        try:
+            from celery import inspect
+        except ImportError:
+            inspect = None
+            print("WARNING: Could not import celery inspect functionality")
+from backend.celery import app as celery_app
 
 # Add the parent directory to sys.path to allow importing from data_sources
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
@@ -66,7 +85,10 @@ def fetch_cisa_vulnerabilities():
 
 @shared_task
 def fetch_all_intelligence():
-    """Fetch intelligence articles from all sources in parallel"""
+    """
+    Orchestrate the fetching of intelligence articles from all sources in parallel,
+    followed by post-processing tasks.
+    """
     # Create a list of task signatures to execute in parallel
     scraper_tasks = [
         fetch_cisco_talos_intelligence.s(),
@@ -85,14 +107,56 @@ def fetch_all_intelligence():
     else:
         scraper_tasks.append(fetch_dark_reading_intelligence.s())
     
-    # Execute all scraper tasks in parallel using Celery's group functionality
-    job = group(scraper_tasks)
-    result = job.apply_async()
+    # Use a chord to run all scrapers in parallel, then process the results
+    # A chord is a group with a callback that's executed after all tasks in the group complete
+    task_flow = chord(
+        header=scraper_tasks,
+        body=process_intelligence_data.s()
+    )
     
-    # Wait for all tasks to complete and get their results
-    task_results = result.get()
+    # Execute the task workflow
+    result = task_flow.apply_async()
     
-    return f"Completed fetching intelligence from all sources in parallel: {', '.join(task_results)}"
+    return f"Intelligence data collection process initiated"
+
+@shared_task
+def process_intelligence_data(results):
+    """
+    Process the intelligence data after all sources have been fetched.
+    This is run as a callback after all scraper tasks complete.
+    
+    Args:
+        results: List of results from all scraper tasks
+    """
+    try:
+        # Count total articles
+        total_articles = IntelligenceArticle.objects.count()
+        
+        # Get stats on sources
+        source_counts = IntelligenceArticle.objects.values('source').annotate(count=Count('source'))
+        sources_summary = ", ".join([f"{item['source']}: {item['count']}" for item in source_counts])
+        
+        # Get the date range of intelligence articles
+        latest_date = IntelligenceArticle.objects.order_by('-published_date').first()
+        earliest_date = IntelligenceArticle.objects.order_by('published_date').first()
+        
+        date_range = ""
+        if latest_date and earliest_date:
+            date_range = f"ranging from {earliest_date.published_date.strftime('%Y-%m-%d')} to {latest_date.published_date.strftime('%Y-%m-%d')}"
+        
+        # Calculate how many new articles were fetched in this run
+        one_day_ago = timezone.now() - timedelta(days=1)
+        recent_articles = IntelligenceArticle.objects.filter(published_date__gte=one_day_ago).count()
+        
+        # Identify potential overlap or duplicate articles (articles with similar titles)
+        # This is a simplified check - a more sophisticated approach could use text similarity
+        message = f"Intelligence data processed: {total_articles} total articles from {len(source_counts)} sources ({sources_summary}) {date_range}. {recent_articles} new articles in the last 24 hours."
+        
+        logger.info(message)
+        return message
+    except Exception as e:
+        logger.error(f"Error processing intelligence data: {str(e)}")
+        return f"Error processing intelligence data: {str(e)}"
 
 @shared_task
 def fetch_cisco_talos_intelligence():
@@ -277,9 +341,34 @@ def fetch_mandiant_intelligence():
 @shared_task
 def fetch_crowdstrike_intel():
     """
-    Fetch intelligence from CrowdStrike Intel Feed.
+    Orchestrate fetching intelligence from CrowdStrike Intel Feed using task chains.
     """
-    logger.info("Fetching CrowdStrike Intel...")
+    logger.info("Starting CrowdStrike intelligence collection workflow")
+    
+    # Create a chain of tasks with dependencies
+    # 1. Fetch threat actors
+    # 2. Fetch malware data
+    # 3. Fetch tailored intelligence (via update_tailored_intelligence task)
+    # 4. Process and summarize all collected data
+    workflow = chain(
+        fetch_crowdstrike_actors.s(),
+        fetch_crowdstrike_malware.s(),
+        update_tailored_intelligence.s(),
+        summarize_crowdstrike_intel.s()
+    )
+    
+    # Execute the workflow
+    result = workflow.apply_async()
+    
+    return "CrowdStrike intelligence collection workflow initiated"
+
+@shared_task
+def fetch_crowdstrike_actors():
+    """
+    Fetch threat actors from CrowdStrike API.
+    This is step 1 in the CrowdStrike intelligence collection workflow.
+    """
+    logger.info("Fetching CrowdStrike threat actors...")
     
     try:
         # Get threat actors from CrowdStrike API
@@ -292,45 +381,103 @@ def fetch_crowdstrike_intel():
         # Process actor data directly from the response
         processed_actors = get_actor_details(actors_data)
         
-        if not processed_actors:
-            logger.warning("Failed to process actor details from CrowdStrike API.")
-            return "Failed to process actor details"
-            
-        actor_count = 0
+        created_count = 0
+        updated_count = 0
         
-        # Process each actor
         for actor in processed_actors:
-            try:
-                # Create or update actor in the database
-                actor_obj, created = CrowdStrikeIntel.objects.update_or_create(
-                    actor_id=actor.get('id'),
-                    defaults={
-                        'name': actor.get('name', 'Unknown'),
-                        'description': actor.get('description', ''),
-                        'adversary_type': actor.get('adversary_type', 'unknown'),
-                        'origins': actor.get('origins', []),
-                        'capabilities': actor.get('capabilities', []),
-                        'motivations': actor.get('motivations', []),
-                        'objectives': actor.get('objectives', []),
-                        'last_update_date': actor.get('last_modified_date')
-                    }
-                )
-                
-                if created:
-                    logger.info(f"Created new threat actor: {actor.get('name')}")
-                else:
-                    logger.info(f"Updated existing threat actor: {actor.get('name')}")
-                    
-                actor_count += 1
-                
-            except Exception as e:
-                logger.error(f"Error saving actor {actor.get('name', 'Unknown')}: {str(e)}")
-                
-        return f"Successfully processed {actor_count} threat actors from CrowdStrike"
+            # Update or create actor
+            obj, created = CrowdStrikeIntel.objects.update_or_create(
+                actor_id=actor['id'],
+                defaults={
+                    'name': actor['name'],
+                    'description': actor.get('description'),
+                    'capabilities': actor.get('capabilities', []),
+                    'motivations': actor.get('motivations', []),
+                    'objectives': actor.get('objectives', []),
+                    'adversary_type': actor.get('type'),
+                    'origins': actor.get('origins', []),
+                    'last_update_date': timezone.now()
+                }
+            )
+            
+            if created:
+                created_count += 1
+            else:
+                updated_count += 1
         
+        result_message = f"CrowdStrike Actors: Created {created_count}, Updated {updated_count}"
+        logger.info(result_message)
+        return result_message
+    
     except Exception as e:
-        logger.error(f"Error fetching CrowdStrike intel: {str(e)}")
-        return f"Error: {str(e)}"
+        error_message = f"Error fetching CrowdStrike threat actors: {str(e)}"
+        logger.error(error_message)
+        return error_message
+
+@shared_task
+def fetch_crowdstrike_malware(previous_result=None):
+    """
+    Fetch malware data from CrowdStrike API.
+    This is step 2 in the CrowdStrike intelligence collection workflow.
+    
+    Args:
+        previous_result: Result from the previous task in the chain (fetch_crowdstrike_actors)
+    """
+    logger.info(f"Fetching CrowdStrike malware data... (Previous task result: {previous_result})")
+    
+    try:
+        # TODO: Implement actual malware data fetching from CrowdStrike API
+        # This is a placeholder - in a real implementation, you'd call the API to get malware data
+        
+        # For now, we'll just log that this was called
+        result_message = "CrowdStrike Malware: Collection not yet implemented"
+        logger.info(result_message)
+        return result_message
+    
+    except Exception as e:
+        error_message = f"Error fetching CrowdStrike malware data: {str(e)}"
+        logger.error(error_message)
+        return error_message
+
+@shared_task
+def summarize_crowdstrike_intel(previous_result=None):
+    """
+    Summarize all collected CrowdStrike intelligence.
+    This is the final step in the CrowdStrike intelligence collection workflow.
+    
+    Args:
+        previous_result: Result from the previous task in the chain
+    """
+    logger.info(f"Summarizing CrowdStrike intelligence... (Previous task result: {previous_result})")
+    
+    try:
+        # Count total entities
+        actor_count = CrowdStrikeIntel.objects.count()
+        malware_count = CrowdStrikeMalware.objects.count()
+        tailored_intel_count = CrowdStrikeTailoredIntel.objects.count()
+        
+        # Get timestamp of most recent data
+        most_recent_actor = CrowdStrikeIntel.objects.order_by('-last_update_date').first()
+        most_recent_actor_date = most_recent_actor.last_update_date if most_recent_actor else "N/A"
+        
+        most_recent_intel = CrowdStrikeTailoredIntel.objects.order_by('-last_updated').first()
+        most_recent_intel_date = most_recent_intel.last_updated if most_recent_intel else "N/A"
+        
+        # Create summary
+        summary = (
+            f"CrowdStrike Intelligence Summary:\n"
+            f"- Threat Actors: {actor_count} (last updated: {most_recent_actor_date})\n"
+            f"- Malware Families: {malware_count}\n"
+            f"- Tailored Intelligence Reports: {tailored_intel_count} (last updated: {most_recent_intel_date})\n"
+        )
+        
+        logger.info(summary)
+        return summary
+    
+    except Exception as e:
+        error_message = f"Error summarizing CrowdStrike intelligence: {str(e)}"
+        logger.error(error_message)
+        return error_message
 
 @shared_task
 def update_tailored_intelligence():
@@ -815,3 +962,186 @@ def fetch_dark_reading_enhanced():
         logger.error(f"Error fetching {source_name} data with free enhanced scraper: {str(e)}")
         logger.info("Falling back to standard scraper as last resort")
         return fetch_dark_reading_intelligence()
+
+@shared_task
+def system_health_check():
+    """
+    Perform system health checks, cleanup, and generate status report.
+    This task runs daily to ensure the system is functioning properly.
+    """
+    logger.info("Running system health check...")
+    
+    results = {
+        "database": check_database_health(),
+        "celery": check_celery_health(),
+        "data_sources": check_data_sources_health(),
+        "cleanup": perform_cleanup_tasks(),
+    }
+    
+    # Generate overall status
+    all_statuses = [v.get("status") for v in results.values()]
+    overall_status = "healthy" if all(s == "healthy" for s in all_statuses) else "degraded"
+    
+    # Create summary
+    summary = f"System Health: {overall_status.upper()}\n"
+    for component, info in results.items():
+        summary += f"- {component}: {info['status']}"
+        if info.get("details"):
+            summary += f" ({info['details']})"
+        summary += "\n"
+    
+    logger.info(summary)
+    
+    # Store the health check result in cache for dashboard display
+    cache.set("system_health_check_result", {
+        "timestamp": timezone.now().isoformat(),
+        "overall_status": overall_status,
+        "results": results,
+        "summary": summary,
+    }, timeout=86400)  # Cache for 24 hours
+    
+    return summary
+
+def check_database_health():
+    """Check database connection and integrity."""
+    try:
+        # Check database connection
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+        
+        # Get database stats
+        article_count = IntelligenceArticle.objects.count()
+        intel_count = CrowdStrikeTailoredIntel.objects.count()
+        actor_count = CrowdStrikeIntel.objects.count()
+        
+        # Check for any tables with 0 records (potential issues)
+        empty_tables = []
+        if article_count == 0:
+            empty_tables.append("intelligence_articles")
+        if intel_count == 0:
+            empty_tables.append("tailored_intel")
+        if actor_count == 0:
+            empty_tables.append("threat_actors")
+        
+        if empty_tables:
+            return {
+                "status": "degraded", 
+                "details": f"Empty tables: {', '.join(empty_tables)}"
+            }
+        
+        return {"status": "healthy", "details": f"{article_count} articles, {intel_count} intel reports, {actor_count} actors"}
+    
+    except Exception as e:
+        logger.error(f"Database health check failed: {str(e)}")
+        return {"status": "unhealthy", "details": str(e)}
+
+def check_celery_health():
+    """Check Celery worker and tasks health."""
+    try:
+        # Check if inspect is available
+        if inspect is None:
+            return {
+                "status": "degraded", 
+                "details": "Celery inspect functionality not available"
+            }
+            
+        # Check if Celery workers are running
+        inspector = inspect()
+        active_workers = inspector.active()
+        
+        if not active_workers:
+            return {"status": "unhealthy", "details": "No active workers found"}
+        
+        # Check for tasks stuck in reserved state
+        reserved = inspector.reserved()
+        reserved_count = sum(len(tasks) for tasks in reserved.values()) if reserved else 0
+        
+        # Check scheduled tasks
+        scheduled = inspector.scheduled()
+        scheduled_count = sum(len(tasks) for tasks in scheduled.values()) if scheduled else 0
+        
+        worker_count = len(active_workers)
+        if reserved_count > 10:
+            return {"status": "degraded", "details": f"{reserved_count} tasks stuck in reserved state"}
+        
+        return {"status": "healthy", "details": f"{worker_count} workers, {scheduled_count} scheduled tasks"}
+    
+    except Exception as e:
+        logger.error(f"Celery health check failed: {str(e)}")
+        return {"status": "degraded", "details": str(e)}
+
+def check_data_sources_health():
+    """Check data sources health based on last update time."""
+    try:
+        # Check when data was last updated
+        current_time = timezone.now()
+        
+        # Intelligence articles - should be updated at least every 12 hours
+        latest_article = IntelligenceArticle.objects.order_by('-published_date').first()
+        latest_article_age = None
+        if latest_article:
+            latest_article_age = (current_time - latest_article.published_date).total_seconds() / 3600  # in hours
+        
+        # CrowdStrike data - should be updated at least daily
+        latest_intel = CrowdStrikeTailoredIntel.objects.order_by('-last_updated').first()
+        latest_intel_age = None
+        if latest_intel and latest_intel.last_updated:
+            latest_intel_age = (current_time - latest_intel.last_updated).total_seconds() / 3600  # in hours
+        
+        # Check if data is stale
+        stale_sources = []
+        if latest_article_age and latest_article_age > 24:  # More than 24 hours old
+            stale_sources.append(f"intelligence articles ({int(latest_article_age)} hours old)")
+        
+        if latest_intel_age and latest_intel_age > 48:  # More than 48 hours old
+            stale_sources.append(f"tailored intelligence ({int(latest_intel_age)} hours old)")
+        
+        if stale_sources:
+            return {"status": "degraded", "details": f"Stale data: {', '.join(stale_sources)}"}
+        
+        return {"status": "healthy", "details": "All data sources updated recently"}
+    
+    except Exception as e:
+        logger.error(f"Data sources health check failed: {str(e)}")
+        return {"status": "degraded", "details": str(e)}
+
+def perform_cleanup_tasks():
+    """Perform cleanup tasks to maintain system health."""
+    try:
+        cleanup_actions = []
+        
+        # Remove duplicate intelligence articles (based on URL)
+        with connection.cursor() as cursor:
+            # Find duplicate URLs
+            cursor.execute("""
+                SELECT url, COUNT(*) as count 
+                FROM ioc_scraper_intelligencearticle 
+                GROUP BY url 
+                HAVING COUNT(*) > 1
+            """)
+            duplicates = cursor.fetchall()
+            
+            # Remove duplicates (keep the most recent)
+            for url, count in duplicates:
+                # Get IDs of all articles with this URL, ordered by published_date (latest first)
+                articles = IntelligenceArticle.objects.filter(url=url).order_by('-published_date')
+                
+                # Keep the first one (most recent), delete the rest
+                if articles.count() > 1:
+                    for article in articles[1:]:
+                        article.delete()
+                        
+                    cleanup_actions.append(f"Removed {count-1} duplicate articles for URL: {url}")
+        
+        # Clean up any temporary cached data older than 30 days
+        # (Implementation would depend on your caching strategy)
+        
+        if cleanup_actions:
+            return {"status": "healthy", "details": f"Performed {len(cleanup_actions)} cleanup actions"}
+        else:
+            return {"status": "healthy", "details": "No cleanup needed"}
+    
+    except Exception as e:
+        logger.error(f"Cleanup tasks failed: {str(e)}")
+        return {"status": "degraded", "details": str(e)}

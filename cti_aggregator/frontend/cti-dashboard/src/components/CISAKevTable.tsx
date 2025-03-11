@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from 'react'
-import { fetchCISAKev, CISAKevVulnerability } from '@/lib/api'
+import { fetchCISAKev, CISAKevVulnerability, isErrorResponse, ApiErrorResponse } from '@/lib/api'
 import { format, parse, isAfter, isBefore, isEqual } from 'date-fns'
 import {
   Table,
@@ -24,11 +24,13 @@ import {
   ChevronUp,
   Filter,
   CalendarIcon,
-  X
+  X,
+  AlertTriangle,
+  Wifi
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 // Types for our filters
 interface SearchFilters {
@@ -46,59 +48,100 @@ export default function CISAKevTable() {
   const [filteredVulnerabilities, setFilteredVulnerabilities] = useState<CISAKevVulnerability[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<'network' | 'server' | 'data' | null>(null);
+  const [dataFetched, setDataFetched] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   
-  // Advanced filters
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  // State for filters
   const [filters, setFilters] = useState<SearchFilters>({
     keyword: '',
     cveId: '',
-    vendor: 'all',
+    vendor: '',
     severity: 'all',
     product: '',
     startDate: '',
     endDate: ''
   });
   
-  // Filter options
+  // State for filter UI
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [advancedFiltersVisible, setAdvancedFiltersVisible] = useState(false);
   const [vendors, setVendors] = useState<string[]>([]);
   const [products, setProducts] = useState<string[]>([]);
-  const [severityLevels, setSeverityLevels] = useState<string[]>([]);
-  
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [severities, setSeverities] = useState<string[]>([]);
 
-  // Fetch vulnerabilities on component mount
+  // Fetch data on component mount (only on client-side)
   useEffect(() => {
-    fetchData();
-  }, []);
+    // Only run data fetching on the client to avoid hydration issues
+    if (typeof window !== 'undefined' && !dataFetched) {
+      fetchData();
+      setDataFetched(true);
+      
+      // Set up weekly refresh (KEV doesn't change frequently)
+      const intervalId = setInterval(() => {
+        fetchData(false);
+      }, 7 * 24 * 60 * 60 * 1000); // 7 days in milliseconds
+      
+      // Clean up interval on component unmount
+      return () => clearInterval(intervalId);
+    }
+  }, [dataFetched]);
 
-  // Filter vulnerabilities when filters change
+  // Apply filters when filters change
   useEffect(() => {
-    filterVulnerabilities();
+    if (vulnerabilities && vulnerabilities.length > 0) {
+      filterVulnerabilities();
+    }
   }, [filters, vulnerabilities]);
 
   // Fetch data from the API
-  const fetchData = async () => {
+  const fetchData = async (skipCache: boolean = false) => {
     try {
       setLoading(true);
-      const data = await fetchCISAKev();
-      setVulnerabilities(data);
-      
-      // Extract unique filter options
-      const uniqueVendors = [...new Set(data.map(vuln => vuln.vendorProject))].filter(Boolean).sort();
-      setVendors(uniqueVendors);
-      
-      const uniqueProducts = [...new Set(data.map(vuln => vuln.product))].filter(Boolean).sort();
-      setProducts(uniqueProducts);
-      
-      const uniqueSeverities = [...new Set(data.map(vuln => vuln.severityLevel))].filter(Boolean).sort();
-      setSeverityLevels(uniqueSeverities);
-      
       setError(null);
+      setErrorType(null);
+      setRetrying(false);
+      
+      const response = await fetchCISAKev(skipCache);
+      
+      // Check if the response is an error
+      if (isErrorResponse(response)) {
+        setError(response.message || 'Failed to fetch CISA KEV data');
+        
+        // Set error type based on status code
+        if (response.status >= 500) {
+          setErrorType('server');
+        } else if (response.status === 408 || response.status === 503) {
+          setErrorType('network');
+        } else {
+          setErrorType('data');
+        }
+        
+        setVulnerabilities([]);
+      } else {
+        // We know it's an array of CISAKevVulnerability now
+        setVulnerabilities(response);
+        
+        // Extract unique vendors, products, and severities for filter dropdowns
+        const uniqueVendors = [...new Set(response.map(vuln => vuln.vendorProject))].filter(Boolean);
+        const uniqueProducts = [...new Set(response.map(vuln => vuln.product))].filter(Boolean);
+        const uniqueSeverities = [...new Set(response.map(vuln => vuln.severityLevel))].filter(Boolean);
+        
+        setVendors(uniqueVendors);
+        setProducts(uniqueProducts);
+        setSeverities(uniqueSeverities);
+        
+        setError(null);
+        setErrorType(null);
+      }
     } catch (err) {
+      console.error('Error fetching vulnerability data:', err);
       setError('Failed to fetch CISA KEV data. Please try again later.');
-      console.error(err);
+      setErrorType('network');
+      setVulnerabilities([]);
     } finally {
       setLoading(false);
+      setRetrying(false);
     }
   };
 
@@ -107,7 +150,7 @@ export default function CISAKevTable() {
     setFilters({
       keyword: '',
       cveId: '',
-      vendor: 'all',
+      vendor: '',
       severity: 'all',
       product: '',
       startDate: '',
@@ -115,83 +158,101 @@ export default function CISAKevTable() {
     });
   };
 
-  // Handle input change for text and date filters
+  // Handle text input filters
   const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFilters(prev => ({ ...prev, [name]: value }));
   };
 
-  // Handle select filters change
+  // Handle select input filters
   const handleSelectChange = (name: string, value: string) => {
     setFilters(prev => ({ ...prev, [name]: value }));
   };
 
-  // Filter vulnerabilities based on all criteria
+  // Filter vulnerabilities based on all active filters
   const filterVulnerabilities = () => {
-    let filtered = [...vulnerabilities];
+    if (!Array.isArray(vulnerabilities)) {
+      setFilteredVulnerabilities([]);
+      return;
+    }
     
-    // Keyword search (general)
-    if (filters.keyword.trim() !== '') {
-      const search = filters.keyword.toLowerCase();
-      filtered = filtered.filter(vuln => 
-        vuln.cveID.toLowerCase().includes(search) || 
-        vuln.vulnerabilityName.toLowerCase().includes(search) ||
-        (vuln.shortDescription && vuln.shortDescription.toLowerCase().includes(search)) ||
-        vuln.vendorProject.toLowerCase().includes(search) ||
-        vuln.product.toLowerCase().includes(search)
+    let result = [...vulnerabilities];
+    
+    // Apply text search
+    if (filters.keyword) {
+      const keyword = filters.keyword.toLowerCase();
+      result = result.filter(vuln => 
+        vuln.vulnerabilityName.toLowerCase().includes(keyword) ||
+        vuln.shortDescription.toLowerCase().includes(keyword) ||
+        vuln.requiredAction.toLowerCase().includes(keyword)
       );
     }
     
-    // CVE ID specific search
-    if (filters.cveId.trim() !== '') {
-      const cveSearch = filters.cveId.toLowerCase();
-      filtered = filtered.filter(vuln => 
-        vuln.cveID.toLowerCase().includes(cveSearch)
+    // Filter by CVE ID
+    if (filters.cveId) {
+      const cveQuery = filters.cveId.toLowerCase();
+      result = result.filter(vuln => 
+        vuln.cveID.toLowerCase().includes(cveQuery)
       );
     }
     
-    // Vendor filter
-    if (filters.vendor !== 'all') {
-      filtered = filtered.filter(vuln => vuln.vendorProject === filters.vendor);
-    }
-    
-    // Severity filter
-    if (filters.severity !== 'all') {
-      filtered = filtered.filter(vuln => vuln.severityLevel === filters.severity);
-    }
-    
-    // Product filter
-    if (filters.product.trim() !== '') {
-      const productSearch = filters.product.toLowerCase();
-      filtered = filtered.filter(vuln => 
-        vuln.product.toLowerCase().includes(productSearch)
+    // Filter by vendor
+    if (filters.vendor) {
+      result = result.filter(vuln => 
+        vuln.vendorProject.toLowerCase().includes(filters.vendor.toLowerCase())
       );
     }
     
-    // Date range filter
-    if (filters.startDate !== '') {
-      const startDate = parse(filters.startDate, 'yyyy-MM-dd', new Date());
-      filtered = filtered.filter(vuln => {
-        const vulnDate = new Date(vuln.dateAdded);
-        return isAfter(vulnDate, startDate) || isEqual(vulnDate, startDate);
-      });
+    // Filter by product
+    if (filters.product) {
+      result = result.filter(vuln => 
+        vuln.product.toLowerCase().includes(filters.product.toLowerCase())
+      );
     }
     
-    if (filters.endDate !== '') {
-      const endDate = parse(filters.endDate, 'yyyy-MM-dd', new Date());
-      filtered = filtered.filter(vuln => {
-        const vulnDate = new Date(vuln.dateAdded);
-        return isBefore(vulnDate, endDate) || isEqual(vulnDate, endDate);
-      });
+    // Filter by severity
+    if (filters.severity && filters.severity !== 'all') {
+      result = result.filter(vuln => 
+        vuln.severityLevel === filters.severity
+      );
     }
     
-    setFilteredVulnerabilities(filtered);
+    // Filter by date range
+    if (filters.startDate) {
+      try {
+        const startDate = parse(filters.startDate, 'yyyy-MM-dd', new Date());
+        result = result.filter(vuln => {
+          const vulnDate = new Date(vuln.dateAdded);
+          return isAfter(vulnDate, startDate) || isEqual(vulnDate, startDate);
+        });
+      } catch (e) {
+        console.error('Invalid start date format:', e);
+      }
+    }
+    
+    if (filters.endDate) {
+      try {
+        const endDate = parse(filters.endDate, 'yyyy-MM-dd', new Date());
+        result = result.filter(vuln => {
+          const vulnDate = new Date(vuln.dateAdded);
+          return isBefore(vulnDate, endDate) || isEqual(vulnDate, endDate);
+        });
+      } catch (e) {
+        console.error('Invalid end date format:', e);
+      }
+    }
+    
+    setFilteredVulnerabilities(result);
   };
 
   // Format date for display
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
     try {
+      // Use a fixed timestamp for server-side rendering to avoid hydration errors
+      if (typeof window === 'undefined') {
+        return 'Loading date...';
+      }
       return format(new Date(dateString), 'PPP');
     } catch (error) {
       return 'Invalid date';
@@ -209,33 +270,95 @@ export default function CISAKevTable() {
     setExpandedRows(newExpandedRows);
   };
 
-  // Get severity badge color
+  // Get appropriate color for severity badge
   const getSeverityColor = (severity: string) => {
-    const severityColors: Record<string, string> = {
+    const colors: Record<string, string> = {
       'Critical': 'bg-red-50 text-red-600 border-red-200',
       'High': 'bg-orange-50 text-orange-600 border-orange-200',
       'Medium': 'bg-yellow-50 text-yellow-600 border-yellow-200',
-      'Low': 'bg-green-50 text-green-600 border-green-200',
+      'Low': 'bg-blue-50 text-blue-600 border-blue-200',
+      'Informational': 'bg-gray-50 text-gray-600 border-gray-200',
     };
     
-    return severityColors[severity] || 'bg-gray-50 text-gray-600 border-gray-200';
+    return colors[severity] || 'bg-gray-50 text-gray-600 border-gray-200';
   };
 
-  // Generate NVD URL for a CVE
+  // Get NVD URL for a CVE
   const getNvdUrl = (cveId: string) => {
     return `https://nvd.nist.gov/vuln/detail/${cveId}`;
   };
 
-  // Helper to determine if any advanced filters are active
+  // Check if any advanced filters are active
   const hasActiveAdvancedFilters = () => {
-    return (
-      filters.cveId.trim() !== '' ||
-      filters.vendor !== 'all' ||
-      filters.severity !== 'all' ||
-      filters.product.trim() !== '' ||
-      filters.startDate !== '' ||
-      filters.endDate !== ''
-    );
+    return filters.cveId !== '' || 
+           filters.vendor !== '' || 
+           filters.product !== '' || 
+           filters.severity !== 'all' ||
+           filters.startDate !== '' ||
+           filters.endDate !== '';
+  };
+
+  // Render different error alerts based on error type
+  const renderErrorAlert = () => {
+    if (!error) return null;
+    
+    switch (errorType) {
+      case 'network':
+        return (
+          <Alert variant="destructive" className="mb-4">
+            <Wifi className="h-4 w-4" />
+            <AlertTitle>Connection Error</AlertTitle>
+            <AlertDescription>
+              {error}
+              <div className="mt-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => {
+                    setRetrying(true);
+                    fetchData(true);
+                  }} 
+                  disabled={retrying}
+                >
+                  {retrying ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                  Retry Connection
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        );
+      case 'server':
+        return (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Server Error</AlertTitle>
+            <AlertDescription>
+              {error}
+              <div className="mt-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => {
+                    setRetrying(true);
+                    fetchData(true);
+                  }} 
+                  disabled={retrying}
+                >
+                  {retrying ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                  Retry Request
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        );
+      default:
+        return (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        );
+    }
   };
 
   return (
@@ -258,12 +381,12 @@ export default function CISAKevTable() {
           <div className="flex gap-2 items-center">
             <Button 
               variant="outline"
-              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-              className={showAdvancedFilters ? "bg-gray-100" : ""}
+              onClick={() => setAdvancedFiltersVisible(!advancedFiltersVisible)}
+              className={advancedFiltersVisible ? "bg-gray-100" : ""}
             >
               <Filter className="h-4 w-4 mr-2" />
-              {showAdvancedFilters ? "Hide Filters" : "Advanced Filters"}
-              {hasActiveAdvancedFilters() && !showAdvancedFilters && (
+              {advancedFiltersVisible ? "Hide Filters" : "Advanced Filters"}
+              {hasActiveAdvancedFilters() && !advancedFiltersVisible && (
                 <Badge className="ml-2 bg-blue-500 text-white" variant="secondary">
                   {Object.values(filters).filter(v => v !== '' && v !== 'all').length}
                 </Badge>
@@ -280,7 +403,7 @@ export default function CISAKevTable() {
         </div>
         
         {/* Advanced filters */}
-        {showAdvancedFilters && (
+        {advancedFiltersVisible && (
           <div className="mt-4 p-4 border rounded-md bg-gray-50">
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-medium">Advanced Filters</h3>
@@ -338,7 +461,7 @@ export default function CISAKevTable() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Severity Levels</SelectItem>
-                    {severityLevels.map(level => (
+                    {severities.map(level => (
                       <SelectItem key={level} value={level}>{level}</SelectItem>
                     ))}
                   </SelectContent>
@@ -457,12 +580,7 @@ export default function CISAKevTable() {
         )}
       </CardHeader>
       <CardContent>
-        {error && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        {renderErrorAlert()}
         
         {loading ? (
           <div className="flex justify-center items-center py-8">

@@ -39,12 +39,14 @@ django.setup()
 from ioc_scraper.models import CrowdStrikeTailoredIntel
 from django.conf import settings
 
+# Try to import FalconPy, handle if not available
 try:
     from falconpy import Intel
+    from falconpy import APIHarness
+    FALCONPY_AVAILABLE = True
 except ImportError:
     print("Could not import FalconPy. Install with: pip install falconpy")
-    print("Proceeding with mock data mode.")
-    Intel = None
+    FALCONPY_AVAILABLE = False
 
 # Configure logging
 logging.basicConfig(
@@ -143,52 +145,71 @@ def get_falcon_api():
         logger.error(f"Error initializing Falcon API: {str(e)}")
         return None
 
-def fetch_tailored_intel(falcon=None, limit=100, use_cache=True):
+def fetch_tailored_intel(api_client_id, api_client_secret, base_url=None):
     """
-    Fetch tailored intelligence reports from CrowdStrike API.
+    Fetch tailored intelligence from CrowdStrike API
     
     Args:
-        falcon: FalconAPI instance
-        limit: Maximum number of reports to fetch
-        use_cache: Whether to use Redis caching
+        api_client_id (str): CrowdStrike API client ID
+        api_client_secret (str): CrowdStrike API client secret
+        base_url (str, optional): Base URL for API. Defaults to None (US Cloud).
         
     Returns:
-        List of reports
+        list: List of tailored intelligence reports
     """
-    if use_cache:
-        cache_key = f"tailored_intel_{limit}"
-        cached_data = get_cached_data(cache_key)
-        if cached_data:
-            logger.info(f"Using cached tailored intelligence data ({len(cached_data)} reports)")
-            return cached_data
+    if not FALCONPY_AVAILABLE:
+        logger.error("FalconPy library not installed. Using mock data for testing.")
+        # Return some mock data for testing
+        return [
+            {
+                "id": "mock-report-1",
+                "name": "Mock Tailored Intelligence Report 1",
+                "summary": "This is a mock report for testing without FalconPy",
+                "publish_date": datetime.now().isoformat(),
+                "last_updated": datetime.now().isoformat(),
+                "url": "https://example.com/mock-report-1",
+                "threat_groups": ["MOCK_GROUP_1", "MOCK_GROUP_2"],
+                "targeted_sectors": ["Technology", "Finance"],
+            },
+            {
+                "id": "mock-report-2",
+                "name": "Mock Tailored Intelligence Report 2",
+                "summary": "This is another mock report for testing without FalconPy",
+                "publish_date": (datetime.now() - timedelta(days=7)).isoformat(),
+                "last_updated": (datetime.now() - timedelta(days=2)).isoformat(),
+                "url": "https://example.com/mock-report-2",
+                "threat_groups": ["MOCK_GROUP_3"],
+                "targeted_sectors": ["Healthcare", "Geography: United States"],
+            }
+        ]
     
-    if not falcon:
-        falcon = get_falcon_api()
-        if not falcon:
-            logger.error("Failed to initialize Falcon API, cannot fetch tailored intelligence")
-            return []
-    
+    # Use FalconPy SDK for API access
     try:
+        # Create the API client
+        client = APIHarness(client_id=api_client_id,
+                            client_secret=api_client_secret,
+                            base_url=base_url)
+        
         # Log available operations for debugging
-        logger.info(f"Available operations: {len(falcon.commands)}")
-        intel_ops = [op for op in falcon.commands if isinstance(op, str) and 'intel' in op.lower()]
+        logger.info(f"Available operations: {len(client.commands)}")
+        intel_ops = [op for op in client.commands if isinstance(op, str) and 'intel' in op.lower()]
         logger.info(f"Intelligence operations: {', '.join(intel_ops[:10])}...")
         
         # Fetch reports - let's try a different filter to see if we get results
         logger.info("Fetching intelligence reports...")
         params = {
-            "limit": limit
+            "limit": 100
         }
         
         # Try to get any kind of intel reports
-        response = falcon.command("QueryIntelIndicatorEntities", parameters=params)
+        response = client.command("QueryIntelIndicatorEntities", parameters=params)
         
         if response["status_code"] != 200:
             logger.error(f"API request failed with status {response['status_code']}: {response.get('body', {}).get('errors', [])}")
             
             # Let's try another endpoint as a fallback
             logger.info("Trying alternate endpoint...")
-            response = falcon.command("GetIntelReports", parameters=params)
+            response = client.command("GetIntelReports", parameters=params)
             
             if response["status_code"] != 200:
                 logger.error(f"Alternate API request failed with status {response['status_code']}: {response.get('body', {}).get('errors', [])}")
@@ -232,7 +253,7 @@ def fetch_tailored_intel(falcon=None, limit=100, use_cache=True):
                     "ids": batch_ids
                 }
                 
-                batch_response = falcon.command("GetIntelReportEntities", parameters=batch_params)
+                batch_response = client.command("GetIntelReportEntities", parameters=batch_params)
                 
                 if batch_response["status_code"] != 200:
                     logger.error(f"Failed to fetch report details for batch {i//batch_size + 1}: {batch_response.get('body', {}).get('errors', [])}")
@@ -269,9 +290,6 @@ def fetch_tailored_intel(falcon=None, limit=100, use_cache=True):
                 "raw_data": report
             }
             processed_reports.append(processed_report)
-        
-        if use_cache and processed_reports:
-            set_cached_data(cache_key, processed_reports, 3600)  # Cache for 1 hour
         
         logger.info(f"Successfully processed {len(processed_reports)} intelligence reports")
         return processed_reports

@@ -10,7 +10,8 @@ from .views import (
     get_cira_data,
     refresh_intelligence,
     threat_intelligence_feed,
-    test_crowdstrike_api
+    test_crowdstrike_api,
+    health_check
 )
 
 router = DefaultRouter()
@@ -27,4 +28,5 @@ urlpatterns = [
     path('refresh-intelligence/', refresh_intelligence, name='refresh-intelligence'),
     path('threat-intelligence-feed/', threat_intelligence_feed, name='threat-intelligence-feed'),
     path('test-crowdstrike-api/', test_crowdstrike_api, name='test-crowdstrike-api'),
+    path('health-check/', health_check, name='health-check'),
 ]

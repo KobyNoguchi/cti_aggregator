@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { fetchCrowdStrikeTailoredIntel, CrowdStrikeTailoredIntel, isErrorResponse, ApiErrorResponse, clearCache } from '@/lib/api'
 import { format } from 'date-fns'
 import {
@@ -21,17 +21,20 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronUp,
-  ExternalLink
+  ExternalLink,
+  AlertTriangle,
+  Wifi
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 export default function CrowdStrikeTailoredIntelTable() {
   const [intelReports, setIntelReports] = useState<CrowdStrikeTailoredIntel[]>([]);
   const [filteredReports, setFilteredReports] = useState<CrowdStrikeTailoredIntel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<'network' | 'server' | 'data' | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedReportType, setSelectedReportType] = useState('all');
   const [selectedSeverity, setSelectedSeverity] = useState('all');
@@ -39,23 +42,31 @@ export default function CrowdStrikeTailoredIntelTable() {
   const [severityLevels, setSeverityLevels] = useState<string[]>([]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [dataFetched, setDataFetched] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
-  // Fetch data on component mount
+  // Fetch data on component mount (only on client-side)
   useEffect(() => {
-    fetchData(false);
-    
-    // Set up periodic refresh (every 15 minutes)
-    const intervalId = setInterval(() => {
+    // Only run data fetching on the client to avoid hydration issues
+    if (typeof window !== 'undefined' && !dataFetched) {
       fetchData(false);
-    }, 15 * 60 * 1000); // 15 minutes in milliseconds
-    
-    // Clean up interval on component unmount
-    return () => clearInterval(intervalId);
-  }, []);
+      setDataFetched(true);
+      
+      // Set up periodic refresh (every 15 minutes)
+      const intervalId = setInterval(() => {
+        fetchData(false);
+      }, 15 * 60 * 1000); // 15 minutes in milliseconds
+      
+      // Clean up interval on component unmount
+      return () => clearInterval(intervalId);
+    }
+  }, [dataFetched]);
 
   // Filter reports when search term or selected filters change
   useEffect(() => {
-    filterReports();
+    if (intelReports && intelReports.length > 0) {
+      filterReports();
+    }
   }, [searchTerm, selectedReportType, selectedSeverity, intelReports]);
 
   // Fetch data from the API
@@ -66,74 +77,98 @@ export default function CrowdStrikeTailoredIntelTable() {
         setIsRefreshing(true);
       }
       setError(null);
+      setErrorType(null);
+      setRetrying(false);
       
       const response = await fetchCrowdStrikeTailoredIntel(forceRefresh);
       
       // Check if the response is an error
       if (isErrorResponse(response)) {
-        setError(response.message);
+        setError(response.message || 'Failed to fetch CrowdStrike tailored intelligence');
+        
+        // Set error type based on status code
+        if (response.status >= 500) {
+          setErrorType('server');
+        } else if (response.status === 408 || response.status === 503) {
+          setErrorType('network');
+        } else {
+          setErrorType('data');
+        }
+        
         setIntelReports([]);
-        console.error('Error fetching tailored intelligence:', response);
-        return;
+      } else {
+        // If we reach here, the response is a successful array of data
+        // Map the API response to the expected format
+        const formattedData = response.map((item: CrowdStrikeTailoredIntel) => ({
+          ...item,
+          title: item.name,
+          report_type: 'Intelligence Report', 
+          // Extract threat actor information from summary if available
+          report_url: item.url,
+          // Extract target countries from summary if available
+          target_countries: item.targeted_sectors.map((sector: string) => 
+            sector.includes("Geography:") ? sector.replace("Geography:", "").trim() : ""
+          ).filter(Boolean),
+          // Default values for filtering
+          confidence_level: 'High',
+          severity_level: 'Medium', 
+        }));
+        
+        // Extract unique report types and severity levels for filters
+        const reportTypeSet = [...new Set(formattedData.map(item => item.report_type || '').filter(Boolean))];
+        const severitySet = [...new Set(formattedData.map(item => item.severity_level || '').filter(Boolean))];
+        
+        setReportTypes(reportTypeSet);
+        setSeverityLevels(severitySet);
+        setIntelReports(formattedData);
+        setError(null);
+        setErrorType(null);
       }
-      
-      // If we reach here, the response is a successful array of data
-      // Map the API response to the expected format
-      const formattedData = response.map((item: CrowdStrikeTailoredIntel) => ({
-        ...item,
-        title: item.name,
-        report_type: 'Intelligence Report', 
-        // Extract threat actor information from summary if available
-        report_url: item.url,
-        // Extract target countries from summary if available
-        target_countries: item.targeted_sectors.map((sector: string) => 
-          sector.includes("Geography:") ? sector.replace("Geography:", "").trim() : ""
-        ).filter(Boolean),
-        // Default values for filtering
-        confidence_level: 'High',
-        severity_level: 'Medium', 
-      }));
-      
-      // Extract unique report types and severity levels for filters
-      const reportTypeSet = [...new Set(formattedData.map(item => item.report_type || '').filter(Boolean))];
-      const severitySet = [...new Set(formattedData.map(item => item.severity_level || '').filter(Boolean))];
-      
-      setReportTypes(reportTypeSet);
-      setSeverityLevels(severitySet);
-      
-      setIntelReports(formattedData);
     } catch (err) {
-      console.error('Unexpected error fetching tailored intelligence:', err);
-      setError('An unexpected error occurred while fetching data. Please try again later.');
+      console.error('Error fetching intel reports:', err);
+      setError('Failed to fetch CrowdStrike Tailored Intel. Please try again later.');
+      setErrorType('network');
+      setIntelReports([]);
     } finally {
       setLoading(false);
-      if (forceRefresh) {
-        setIsRefreshing(false);
-      }
+      setIsRefreshing(false);
     }
   };
 
+  // Handle retry button click
+  const handleRetry = useCallback(() => {
+    setRetrying(true);
+    fetchData(true).finally(() => {
+      setRetrying(false);
+    });
+  }, []);
+
   // Filter reports based on search term and selected filters
   const filterReports = () => {
+    if (!Array.isArray(intelReports)) {
+      setFilteredReports([]);
+      return;
+    }
+    
     let filtered = [...intelReports];
     
+    // Filter by report type
     if (selectedReportType !== 'all') {
       filtered = filtered.filter(report => report.report_type === selectedReportType);
     }
     
+    // Filter by severity
     if (selectedSeverity !== 'all') {
       filtered = filtered.filter(report => report.severity_level === selectedSeverity);
     }
     
+    // Filter by search term
     if (searchTerm.trim() !== '') {
       const search = searchTerm.toLowerCase();
       filtered = filtered.filter(report => 
-        (report.title || '').toLowerCase().includes(search) || 
-        (report.summary && report.summary.toLowerCase().includes(search)) ||
-        (report.threat_groups && report.threat_groups.some(group => group.toLowerCase().includes(search))) ||
-        (report.malware_families && report.malware_families.some(malware => malware.toLowerCase().includes(search))) ||
-        (report.target_sectors && report.target_sectors.some(sector => sector.toLowerCase().includes(search))) ||
-        (report.target_countries && report.target_countries.some(country => country.toLowerCase().includes(search)))
+        (report.name?.toLowerCase().includes(search)) || 
+        (report.summary?.toLowerCase().includes(search)) ||
+        (report.threat_groups?.some(group => group.toLowerCase().includes(search)))
       );
     }
     
@@ -144,9 +179,13 @@ export default function CrowdStrikeTailoredIntelTable() {
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
     try {
-      return format(new Date(dateString), 'MMM d, yyyy');
+      // Use a fixed timestamp for server-side rendering to avoid hydration errors
+      if (typeof window === 'undefined') {
+        return 'Loading date...';
+      }
+      return format(new Date(dateString), 'PPP');
     } catch (error) {
-      return dateString;
+      return 'Invalid date';
     }
   };
 
@@ -161,16 +200,74 @@ export default function CrowdStrikeTailoredIntelTable() {
     setExpandedRows(newExpandedRows);
   };
 
-  // Get appropriate color for severity badge
+  // Get severity color
   const getSeverityColor = (severity: string = 'Medium') => {
-    const severityColors = {
+    const colors: Record<string, string> = {
       'Critical': 'bg-red-50 text-red-600 border-red-200',
       'High': 'bg-orange-50 text-orange-600 border-orange-200',
       'Medium': 'bg-yellow-50 text-yellow-600 border-yellow-200',
-      'Low': 'bg-green-50 text-green-600 border-green-200',
+      'Low': 'bg-blue-50 text-blue-600 border-blue-200',
+      'Informational': 'bg-gray-50 text-gray-600 border-gray-200',
     };
     
-    return severityColors[severity as keyof typeof severityColors] || 'bg-gray-50 text-gray-600 border-gray-200';
+    return colors[severity] || colors['Medium'];
+  };
+
+  // Render different error alerts based on error type
+  const renderErrorAlert = () => {
+    if (!error) return null;
+    
+    switch (errorType) {
+      case 'network':
+        return (
+          <Alert variant="destructive" className="mb-4">
+            <Wifi className="h-4 w-4" />
+            <AlertTitle>Connection Error</AlertTitle>
+            <AlertDescription>
+              {error}
+              <div className="mt-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => handleRetry()} 
+                  disabled={retrying}
+                >
+                  {retrying ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                  Retry Connection
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        );
+      case 'server':
+        return (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Server Error</AlertTitle>
+            <AlertDescription>
+              {error}
+              <div className="mt-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => handleRetry()} 
+                  disabled={retrying}
+                >
+                  {retrying ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                  Retry Request
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        );
+      default:
+        return (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        );
+    }
   };
 
   return (
@@ -230,12 +327,7 @@ export default function CrowdStrikeTailoredIntelTable() {
         </div>
       </CardHeader>
       <CardContent>
-        {error && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        {renderErrorAlert()}
         
         {loading ? (
           <div className="flex justify-center items-center py-8">

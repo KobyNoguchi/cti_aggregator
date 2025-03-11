@@ -1,7 +1,7 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
-import { fetchCrowdStrikeActors, CrowdStrikeActor } from '@/lib/api'
+import React, { useState, useEffect, useCallback } from 'react'
+import { fetchCrowdStrikeActors, CrowdStrikeActor, isErrorResponse, ApiErrorResponse } from '@/lib/api'
 import { format } from 'date-fns'
 import {
   Table,
@@ -21,69 +21,118 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronUp,
-  Globe
+  Globe,
+  AlertTriangle,
+  Wifi
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 export default function CrowdStrikeActorsTable() {
   const [actors, setActors] = useState<CrowdStrikeActor[]>([]);
   const [filteredActors, setFilteredActors] = useState<CrowdStrikeActor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<'network' | 'server' | 'data' | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAdversaryType, setSelectedAdversaryType] = useState('all');
   const [selectedOrigin, setSelectedOrigin] = useState('all');
   const [adversaryTypes, setAdversaryTypes] = useState<string[]>([]);
   const [origins, setOrigins] = useState<string[]>([]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [dataFetched, setDataFetched] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
-  // Fetch data on component mount
+  // Fetch data on component mount (only on client-side)
   useEffect(() => {
-    fetchData();
-    
-    // Set up hourly refresh
-    const intervalId = setInterval(() => {
+    // Only run data fetching on the client to avoid hydration issues
+    if (typeof window !== 'undefined' && !dataFetched) {
       fetchData();
-    }, 60 * 60 * 1000); // 1 hour in milliseconds
-    
-    // Clean up interval on component unmount
-    return () => clearInterval(intervalId);
-  }, []);
+      setDataFetched(true);
+      
+      // Set up hourly refresh
+      const intervalId = setInterval(() => {
+        fetchData(false);
+      }, 60 * 60 * 1000); // 1 hour in milliseconds
+      
+      // Clean up interval on component unmount
+      return () => clearInterval(intervalId);
+    }
+  }, [dataFetched]);
 
   // Filter actors when search term or selected filters change
   useEffect(() => {
-    filterActors();
+    if (actors && actors.length > 0) {
+      filterActors();
+    }
   }, [searchTerm, selectedAdversaryType, selectedOrigin, actors]);
 
   // Fetch data from the API
-  const fetchData = async () => {
+  const fetchData = async (skipCache: boolean = false) => {
     try {
       setLoading(true);
-      const data = await fetchCrowdStrikeActors();
-      setActors(data);
-      
-      // Extract unique adversary types for filter dropdown
-      const uniqueAdversaryTypes = [...new Set(data.map(actor => actor.adversary_type))].filter(Boolean).sort();
-      setAdversaryTypes(uniqueAdversaryTypes as string[]);
-      
-      // Extract unique origins for filter dropdown
-      const allOrigins = data.flatMap(actor => actor.origins || []);
-      const uniqueOrigins = [...new Set(allOrigins)].filter(Boolean).sort();
-      setOrigins(uniqueOrigins as string[]);
-      
       setError(null);
+      setErrorType(null);
+      setRetrying(false);
+      
+      const response = await fetchCrowdStrikeActors(skipCache);
+      
+      // Check if the response is an error
+      if (isErrorResponse(response)) {
+        setError(response.message || 'Failed to fetch CrowdStrike actor data');
+        
+        // Set error type based on status code
+        if (response.status >= 500) {
+          setErrorType('server');
+        } else if (response.status === 408 || response.status === 503) {
+          setErrorType('network');
+        } else {
+          setErrorType('data');
+        }
+        
+        setActors([]);
+      } else {
+        // We know it's an array of CrowdStrikeActor now
+        setActors(response);
+        
+        // Extract unique adversary types for filter dropdown
+        const uniqueAdversaryTypes = [...new Set(response.map(actor => actor.adversary_type))].filter(Boolean).sort();
+        setAdversaryTypes(uniqueAdversaryTypes as string[]);
+        
+        // Extract unique origins for filter dropdown
+        const allOrigins = response.flatMap(actor => actor.origins || []);
+        const uniqueOrigins = [...new Set(allOrigins)].filter(Boolean).sort();
+        setOrigins(uniqueOrigins as string[]);
+        
+        setError(null);
+        setErrorType(null);
+      }
     } catch (err) {
       setError('Failed to fetch CrowdStrike actor data. Please try again later.');
+      setErrorType('network');
       console.error(err);
+      setActors([]);
     } finally {
       setLoading(false);
     }
   };
 
+  // Handle retry button click
+  const handleRetry = useCallback(() => {
+    setRetrying(true);
+    fetchData(true).finally(() => {
+      setRetrying(false);
+    });
+  }, []);
+
   // Filter actors based on search term and selected filters
   const filterActors = () => {
+    if (!Array.isArray(actors)) {
+      setFilteredActors([]);
+      return;
+    }
+    
     let filtered = [...actors];
     
     if (selectedAdversaryType !== 'all') {
@@ -99,9 +148,8 @@ export default function CrowdStrikeActorsTable() {
       filtered = filtered.filter(actor => 
         actor.name.toLowerCase().includes(search) || 
         (actor.description && actor.description.toLowerCase().includes(search)) ||
-        (actor.capabilities && actor.capabilities.some(capability => capability.toLowerCase().includes(search))) ||
-        (actor.motivations && actor.motivations.some(motivation => motivation.toLowerCase().includes(search))) ||
-        (actor.objectives && actor.objectives.some(objective => objective.toLowerCase().includes(search)))
+        (actor.capabilities && actor.capabilities.some(cap => cap.toLowerCase().includes(search))) ||
+        (actor.objectives && actor.objectives.some(obj => obj.toLowerCase().includes(search)))
       );
     }
     
@@ -112,6 +160,10 @@ export default function CrowdStrikeActorsTable() {
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
     try {
+      // Use a fixed timestamp for server-side rendering to avoid hydration errors
+      if (typeof window === 'undefined') {
+        return 'Loading date...';
+      }
       return format(new Date(dateString), 'PPP');
     } catch (error) {
       return 'Invalid date';
@@ -129,6 +181,63 @@ export default function CrowdStrikeActorsTable() {
     setExpandedRows(newExpandedRows);
   };
 
+  // Render different error alerts based on error type
+  const renderErrorAlert = () => {
+    if (!error) return null;
+    
+    switch (errorType) {
+      case 'network':
+        return (
+          <Alert variant="destructive" className="mb-4">
+            <Wifi className="h-4 w-4" />
+            <AlertTitle>Connection Error</AlertTitle>
+            <AlertDescription>
+              {error}
+              <div className="mt-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => handleRetry()} 
+                  disabled={retrying}
+                >
+                  {retrying ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                  Retry Connection
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        );
+      case 'server':
+        return (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Server Error</AlertTitle>
+            <AlertDescription>
+              {error}
+              <div className="mt-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => handleRetry()} 
+                  disabled={retrying}
+                >
+                  {retrying ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                  Retry Request
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        );
+      default:
+        return (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        );
+    }
+  };
+
   return (
     <Card className="w-full">
       <CardHeader className="pb-2">
@@ -137,7 +246,7 @@ export default function CrowdStrikeActorsTable() {
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <Search className="w-4 h-4 text-gray-500" />
             <Input
-              placeholder="Search threat actors..."
+              placeholder="Search actors..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full sm:w-64"
@@ -149,10 +258,10 @@ export default function CrowdStrikeActorsTable() {
               onValueChange={setSelectedAdversaryType}
             >
               <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder="All Adversary Types" />
+                <SelectValue placeholder="Adversary Type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Adversary Types</SelectItem>
+                <SelectItem value="all">All Types</SelectItem>
                 {adversaryTypes.map(type => (
                   <SelectItem key={type} value={type}>{type}</SelectItem>
                 ))}
@@ -164,7 +273,7 @@ export default function CrowdStrikeActorsTable() {
               onValueChange={setSelectedOrigin}
             >
               <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder="All Origins" />
+                <SelectValue placeholder="Origin" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Origins</SelectItem>
@@ -177,20 +286,16 @@ export default function CrowdStrikeActorsTable() {
             <Button 
               variant="outline" 
               size="icon" 
-              onClick={fetchData} 
+              onClick={() => fetchData(true)} 
+              disabled={loading}
             >
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
           </div>
         </div>
       </CardHeader>
       <CardContent>
-        {error && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        {error && renderErrorAlert()}
         
         {loading ? (
           <div className="flex justify-center items-center py-8">
@@ -200,140 +305,106 @@ export default function CrowdStrikeActorsTable() {
           <div className="rounded-md border">
             <Table>
               <TableCaption>
-                {filteredActors.length > 0 
+                {filteredActors && filteredActors.length > 0 
                   ? `Showing ${filteredActors.length} of ${actors.length} threat actors`
                   : 'No matching threat actors found'
                 }
               </TableCaption>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[50px]"></TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="hidden md:table-cell">Type</TableHead>
-                  <TableHead className="hidden md:table-cell">Origins</TableHead>
-                  <TableHead className="hidden md:table-cell">Last Updated</TableHead>
+                  <TableHead className="w-[200px]">Name</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Origin</TableHead>
+                  <TableHead>Last Updated</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredActors.length > 0 ? (
+                {filteredActors && filteredActors.length > 0 ? (
                   filteredActors.map((actor) => (
                     <React.Fragment key={actor.actor_id}>
-                      <TableRow
-                        className="cursor-pointer"
-                        onClick={() => toggleRowExpansion(actor.actor_id)}
-                      >
-                        <TableCell>
-                          {expandedRows.has(actor.actor_id) ? (
-                            <ChevronUp className="h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4" />
-                          )}
-                        </TableCell>
+                      <TableRow>
                         <TableCell className="font-medium">
                           {actor.name}
                         </TableCell>
-                        <TableCell className="hidden md:table-cell">
+                        <TableCell>
                           {actor.adversary_type || 'Unknown'}
                         </TableCell>
-                        <TableCell className="hidden md:table-cell">
+                        <TableCell>
                           <div className="flex flex-wrap gap-1">
                             {actor.origins && actor.origins.length > 0 ? (
-                              actor.origins.slice(0, 2).map((origin, index) => (
-                                <Badge key={index} variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 flex items-center gap-1">
+                              actor.origins.map((origin, index) => (
+                                <Badge key={index} variant="outline" className="flex items-center gap-1">
                                   <Globe className="h-3 w-3" />
                                   {origin}
                                 </Badge>
                               ))
                             ) : (
-                              <span className="text-gray-500 text-sm">Unknown</span>
-                            )}
-                            {actor.origins && actor.origins.length > 2 && (
-                              <Badge variant="outline" className="bg-gray-50 text-gray-700">
-                                +{actor.origins.length - 2} more
-                              </Badge>
+                              'Unknown'
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="hidden md:table-cell">
-                          {formatDate(actor.last_update_date)}
+                        <TableCell>{formatDate(actor.last_update_date)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => toggleRowExpansion(actor.actor_id)}
+                          >
+                            {expandedRows.has(actor.actor_id) ? (
+                              <ChevronUp className="h-4 w-4 mr-1" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4 mr-1" />
+                            )}
+                            {expandedRows.has(actor.actor_id) ? 'Hide Details' : 'Show Details'}
+                          </Button>
                         </TableCell>
                       </TableRow>
                       {expandedRows.has(actor.actor_id) && (
                         <TableRow>
                           <TableCell colSpan={5} className="p-4 bg-gray-50">
-                            <div className="space-y-4">
-                              <div>
-                                <h4 className="text-sm font-semibold mb-1">Description</h4>
-                                <p className="text-sm text-gray-700">{actor.description || 'No description available'}</p>
-                              </div>
+                            <div className="text-sm">
+                              <h4 className="font-semibold mb-2">Details</h4>
                               
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                  <h4 className="text-sm font-semibold mb-1">Capabilities</h4>
-                                  <div className="flex flex-wrap gap-1">
-                                    {actor.capabilities && actor.capabilities.length > 0 ? (
-                                      actor.capabilities.map((capability, index) => (
-                                        <Badge key={index} variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                                          {capability}
-                                        </Badge>
-                                      ))
-                                    ) : (
-                                      <span className="text-gray-500 text-sm">None identified</span>
-                                    )}
-                                  </div>
+                              {actor.description && (
+                                <div className="mb-3">
+                                  <h5 className="font-medium text-gray-700 mb-1">Description</h5>
+                                  <p className="text-gray-600">{actor.description}</p>
                                 </div>
-                                
-                                <div>
-                                  <h4 className="text-sm font-semibold mb-1">Motivations</h4>
-                                  <div className="flex flex-wrap gap-1">
-                                    {actor.motivations && actor.motivations.length > 0 ? (
-                                      actor.motivations.map((motivation, index) => (
-                                        <Badge key={index} variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
-                                          {motivation}
-                                        </Badge>
-                                      ))
-                                    ) : (
-                                      <span className="text-gray-500 text-sm">None identified</span>
-                                    )}
-                                  </div>
-                                </div>
-                                
-                                <div>
-                                  <h4 className="text-sm font-semibold mb-1">Objectives</h4>
-                                  <div className="flex flex-wrap gap-1">
-                                    {actor.objectives && actor.objectives.length > 0 ? (
-                                      actor.objectives.map((objective, index) => (
-                                        <Badge key={index} variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                                          {objective}
-                                        </Badge>
-                                      ))
-                                    ) : (
-                                      <span className="text-gray-500 text-sm">None identified</span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
+                              )}
                               
-                              <div>
-                                <h4 className="text-sm font-semibold mb-1">Origins</h4>
-                                <div className="flex flex-wrap gap-1">
-                                  {actor.origins && actor.origins.length > 0 ? (
-                                    actor.origins.map((origin, index) => (
-                                      <Badge key={index} variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 flex items-center gap-1">
-                                        <Globe className="h-3 w-3" />
-                                        {origin}
-                                      </Badge>
-                                    ))
-                                  ) : (
-                                    <span className="text-gray-500 text-sm">Unknown</span>
-                                  )}
+                              {actor.capabilities && actor.capabilities.length > 0 && (
+                                <div className="mb-3">
+                                  <h5 className="font-medium text-gray-700 mb-1">Capabilities</h5>
+                                  <ul className="list-disc pl-5 text-gray-600">
+                                    {actor.capabilities.map((capability, index) => (
+                                      <li key={index}>{capability}</li>
+                                    ))}
+                                  </ul>
                                 </div>
-                              </div>
+                              )}
                               
-                              <div>
-                                <h4 className="text-sm font-semibold mb-1">Last Updated</h4>
-                                <p className="text-sm">{formatDate(actor.last_update_date)}</p>
-                              </div>
+                              {actor.motivations && actor.motivations.length > 0 && (
+                                <div className="mb-3">
+                                  <h5 className="font-medium text-gray-700 mb-1">Motivations</h5>
+                                  <ul className="list-disc pl-5 text-gray-600">
+                                    {actor.motivations.map((motivation, index) => (
+                                      <li key={index}>{motivation}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              
+                              {actor.objectives && actor.objectives.length > 0 && (
+                                <div className="mb-3">
+                                  <h5 className="font-medium text-gray-700 mb-1">Objectives</h5>
+                                  <ul className="list-disc pl-5 text-gray-600">
+                                    {actor.objectives.map((objective, index) => (
+                                      <li key={index}>{objective}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
