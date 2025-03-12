@@ -1,0 +1,218 @@
+{
+  "timestamp": "2025-03-10T22:07:57.903066",
+  "web_accessibility": {
+    "timestamp": "2025-03-10T22:06:55.750849",
+    "total_sources": 10,
+    "successful_sources": 10,
+    "failed_sources": 0,
+    "success_rate": "100.00%",
+    "results": [
+      {
+        "name": "Cisco Talos",
+        "url": "https://blog.talosintelligence.com/",
+        "status": "SUCCESS",
+        "status_code": 200,
+        "keywords_found": [
+          "threat",
+          "security",
+          "attack",
+          "vulnerability",
+          "cyber",
+          "intelligence",
+          "research",
+          "advisory",
+          "report"
+        ],
+        "timestamp": "2025-03-10T22:06:54.858723"
+      },
+      {
+        "name": "Palo Alto Unit42",
+        "url": "https://unit42.paloaltonetworks.com/",
+        "status": "SUCCESS",
+        "status_code": 200,
+        "keywords_found": [
+          "threat",
+          "security",
+          "malware",
+          "attack",
+          "vulnerability",
+          "cyber",
+          "intelligence",
+          "research",
+          "report"
+        ],
+        "timestamp": "2025-03-10T22:06:54.860006"
+      },
+      {
+        "name": "Zscaler ThreatLabz",
+        "url": "https://www.zscaler.com/blogs/security-research",
+        "status": "SUCCESS",
+        "status_code": 200,
+        "keywords_found": [
+          "threat",
+          "security",
+          "attack",
+          "vulnerability",
+          "cyber",
+          "intelligence",
+          "research",
+          "advisory",
+          "report"
+        ],
+        "timestamp": "2025-03-10T22:06:54.860620"
+      },
+      {
+        "name": "Google TAG",
+        "url": "https://blog.google/threat-analysis-group/",
+        "status": "SUCCESS",
+        "status_code": 200,
+        "keywords_found": [
+          "threat",
+          "attack",
+          "report"
+        ],
+        "timestamp": "2025-03-10T22:06:54.861443"
+      },
+      {
+        "name": "Proofpoint Threat Insight",
+        "url": "https://www.proofpoint.com/us/blog/threat-insight",
+        "status": "SUCCESS",
+        "status_code": 200,
+        "keywords_found": [
+          "threat",
+          "security",
+          "malware",
+          "attack",
+          "cyber",
+          "intelligence",
+          "research",
+          "report"
+        ],
+        "timestamp": "2025-03-10T22:06:54.862509"
+      },
+      {
+        "name": "Mandiant",
+        "url": "https://www.mandiant.com/resources/blog",
+        "status": "SUCCESS",
+        "status_code": 200,
+        "keywords_found": [
+          "threat",
+          "security",
+          "malware",
+          "cyber",
+          "intelligence",
+          "research",
+          "report"
+        ],
+        "timestamp": "2025-03-10T22:06:55.030042"
+      },
+      {
+        "name": "SANS Internet Storm Center",
+        "url": "https://isc.sans.edu/",
+        "status": "SUCCESS",
+        "status_code": 200,
+        "keywords_found": [
+          "threat",
+          "security",
+          "vulnerability",
+          "research"
+        ],
+        "timestamp": "2025-03-10T22:06:55.051976"
+      },
+      {
+        "name": "Securelist by Kaspersky",
+        "url": "https://securelist.com/",
+        "status": "SUCCESS",
+        "status_code": 200,
+        "keywords_found": [
+          "threat",
+          "security",
+          "malware",
+          "attack",
+          "cyber",
+          "intelligence",
+          "research",
+          "report"
+        ],
+        "timestamp": "2025-03-10T22:06:55.100052"
+      },
+      {
+        "name": "AlienVault OTX",
+        "url": "https://otx.alienvault.com/",
+        "status": "SUCCESS",
+        "status_code": 200,
+        "keywords_found": [
+          "threat",
+          "cyber",
+          "intelligence",
+          "research"
+        ],
+        "timestamp": "2025-03-10T22:06:55.201779"
+      },
+      {
+        "name": "MITRE ATT&CK",
+        "url": "https://attack.mitre.org/",
+        "status": "SUCCESS",
+        "status_code": 200,
+        "keywords_found": [
+          "threat",
+          "security",
+          "malware",
+          "attack",
+          "vulnerability",
+          "cyber",
+          "intelligence"
+        ],
+        "timestamp": "2025-03-10T22:06:55.230937"
+      }
+    ]
+  },
+  "scraper_functionality": {
+    "timestamp": "2025-03-10T22:06:55.750951",
+    "scrapers_tested": 3,
+    "scrapers_working": 0,
+    "success_rate": "0.00%",
+    "results": [
+      {
+        "name": "Palo Alto Unit42",
+        "url": "https://unit42.paloaltonetworks.com/",
+        "status": "FAILED",
+        "articles_found": 0,
+        "error": null
+      },
+      {
+        "name": "Zscaler ThreatLabz",
+        "url": "https://www.zscaler.com/blogs/security-research",
+        "status": "FAILED",
+        "articles_found": 0,
+        "error": null
+      },
+      {
+        "name": "Google TAG",
+        "url": "https://blog.google/threat-analysis-group/",
+        "status": "FAILED",
+        "articles_found": 0,
+        "error": null
+      }
+    ]
+  },
+  "ms_integration": {
+    "timestamp": "2025-03-10T22:07:55.476296",
+    "microsoft_source_count": 0,
+    "microsoft_intel_count": 0,
+    "non_microsoft_source_count": 10,
+    "non_microsoft_scraper_count": 0,
+    "comparison": {
+      "sources_ratio": "0",
+      "intel_ratio": "0"
+    },
+    "microsoft_available": false,
+    "status": "SUCCESS"
+  },
+  "overall_result": {
+    "websites_accessible": true,
+    "scrapers_working": false,
+    "ms_integration_success": true
+  },
+  "success": true
+}
