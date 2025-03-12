@@ -24,6 +24,19 @@ function Test-TailoredIntelligence {
     }
 }
 
+# Function to test all intelligence scrapers
+function Test-IntelligenceScrapers {
+    Write-Output "Testing all intelligence scrapers..."
+    cd $PSScriptRoot/backend
+    python manage.py shell < ../tests/run_scrapers_test.py
+    cd $PSScriptRoot
+    if ($LASTEXITCODE -ne 0) {
+        Write-Output "Warning: Intelligence scraper tests had failures with exit code $LASTEXITCODE"
+    } else {
+        Write-Output "Intelligence scraper tests completed!"
+    }
+}
+
 # Check for migrations that need to be applied
 function Apply-Migrations {
     Write-Output "Checking for and applying database migrations..."
@@ -83,6 +96,21 @@ Start-Process -NoNewWindow -FilePath "powershell" -ArgumentList "cd backend; cel
 Write-Output "Scheduling periodic Tailored Intelligence updates..."
 # Note: Make sure your Celery Beat schedule includes the Tailored Intelligence update task
 
+# Test the intelligence scrapers directly
+Write-Output "Running comprehensive test of all intelligence scrapers..."
+Start-Sleep -Seconds 10  # Give Celery worker time to start up
+Test-IntelligenceScrapers
+
+# Trigger immediate intelligence scraping for all sources
+Write-Output "Triggering immediate intelligence scraping for all sources..."
+Start-Sleep -Seconds 5  # Give Celery worker time to start
+Start-Process -NoNewWindow -FilePath "powershell" -ArgumentList "cd backend; python manage.py shell -c 'from ioc_scraper.tasks import fetch_all_intelligence; fetch_all_intelligence()'"
+
+# Check what sources are being scraped
+Write-Output "Checking intelligence sources..."
+Start-Sleep -Seconds 15  # Give time for scraping to start
+Start-Process -NoNewWindow -FilePath "powershell" -ArgumentList "cd backend; python manage.py shell -c 'from ioc_scraper.models import IntelligenceArticle; from django.db.models import Count; print(\"Sources found:\", list(IntelligenceArticle.objects.values(\"source\").annotate(count=Count(\"source\"))))'"
+
 # Stop any existing frontend applications
 Write-Output "Stopping any existing dashboard instances..."
 $nodeProcesses = Get-Process | Where-Object { $_.ProcessName -eq "node" -and $_.Path -eq "C:\Program Files\nodejs\node.exe" }
@@ -111,3 +139,4 @@ Write-Output "All services have been started!"
 Write-Output "CTI Dashboard available at: http://localhost:3000"
 Write-Output "Backend API available at: http://localhost:8000"
 Write-Output "Tailored Intelligence module is active and data has been loaded"
+Write-Output "Multiple intelligence sources should now be visible in the dashboard"

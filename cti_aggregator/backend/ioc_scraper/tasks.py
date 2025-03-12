@@ -103,17 +103,23 @@ def fetch_all_intelligence():
     else:
         scraper_tasks.append(fetch_dark_reading_intelligence.s())
     
-    # Use a chord to run all scrapers in parallel, then process the results
-    # A chord is a group with a callback that's executed after all tasks in the group complete
-    task_flow = chord(
-        header=scraper_tasks,
-        body=process_intelligence_data.s()
-    )
+    # Instead of using a chord, run the tasks sequentially
+    results = []
+    for task in scraper_tasks:
+        try:
+            result = task.apply()
+            results.append(result.get())
+        except Exception as e:
+            logger.error(f"Error running scraper task: {str(e)}")
+            results.append(f"Error: {str(e)}")
     
-    # Execute the task workflow
-    result = task_flow.apply_async()
+    # Process the results
+    try:
+        process_intelligence_data(results)
+    except Exception as e:
+        logger.error(f"Error processing intelligence data: {str(e)}")
     
-    return f"Intelligence data collection process initiated"
+    return f"Intelligence data collection process completed"
 
 @shared_task
 def process_intelligence_data(results):

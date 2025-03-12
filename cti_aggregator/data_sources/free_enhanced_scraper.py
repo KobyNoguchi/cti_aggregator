@@ -341,6 +341,24 @@ def scrape_intelligence_articles(url: str, source_name: str,
     Returns:
         List of dictionaries containing article information
     """
+    # Special case handling for specific sources that need custom selectors
+    # These are updated based on our selector analysis
+    if source_name == "Palo Alto Unit 42" and article_selector == "article.type-post":
+        # Update selectors based on our analysis
+        article_selector = "article"
+        title_selector = "h2.entry-title a"
+        url_selector = "h2.entry-title a"
+        date_selector = "time.entry-date"
+        summary_selector = ".entry-summary"
+    
+    if source_name == "Google TAG" and article_selector == ".blogPost":
+        # Update selectors based on our analysis
+        article_selector = "article"
+        title_selector = "h2 a"
+        url_selector = "h2 a"
+        date_selector = "time"
+        summary_selector = "article p"
+    
     logger.info(f"Scraping intelligence articles from {source_name}")
     
     # Create and configure the scraper
