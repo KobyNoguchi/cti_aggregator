@@ -7,6 +7,8 @@ export interface IntelligenceArticle {
   url: string;
   published_date: string;
   summary: string | null;
+  threat_actor_type: string | null;
+  target_industries: string | null;
 }
 
 export interface CrowdStrikeMalware {
@@ -486,39 +488,6 @@ export async function fetchCrowdStrikeTailoredIntel(skipCache: boolean = false):
 }
 
 /**
- * Fetch CrowdStrike indicators from the backend
- */
-export async function fetchCrowdStrikeIndicators(skipCache: boolean = false): Promise<CrowdStrikeIndicator[] | ApiErrorResponse> {
-  return fetchFromApi<CrowdStrikeIndicator>(
-    '/crowdstrike/indicators/', 
-    'Could not retrieve indicators',
-    skipCache ? null : undefined
-  );
-}
-
-/**
- * Fetch CrowdStrike rules from the backend
- */
-export async function fetchCrowdStrikeRules(skipCache: boolean = false): Promise<CrowdStrikeRule[] | ApiErrorResponse> {
-  return fetchFromApi<CrowdStrikeRule>(
-    '/crowdstrike/rules/', 
-    'Could not retrieve rules',
-    skipCache ? null : undefined
-  );
-}
-
-/**
- * Fetch CrowdStrike vulnerabilities from the backend
- */
-export async function fetchCrowdStrikeVulnerabilities(skipCache: boolean = false): Promise<CrowdStrikeVulnerability[] | ApiErrorResponse> {
-  return fetchFromApi<CrowdStrikeVulnerability>(
-    '/crowdstrike/vulnerabilities/', 
-    'Could not retrieve vulnerabilities',
-    skipCache ? null : undefined
-  );
-}
-
-/**
  * Refresh intelligence articles by triggering scraping tasks
  */
 export async function refreshIntelligence(): Promise<{success: boolean, message: string}> {
@@ -545,4 +514,4 @@ export async function refreshIntelligence(): Promise<{success: boolean, message:
       message: `Error refreshing intelligence: ${error instanceof Error ? error.message : 'Unknown error'}`
     };
   }
-} 
+}

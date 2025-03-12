@@ -313,11 +313,11 @@ export default function CrowdStrikeActorsTable() {
               </TableCaption>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[200px]">Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Origin</TableHead>
-                  <TableHead>Last Updated</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="w-[20%]">Name</TableHead>
+                  <TableHead className="w-[15%]">Type</TableHead>
+                  <TableHead className="w-[30%]">Origin</TableHead>
+                  <TableHead className="w-[20%]">Last Updated</TableHead>
+                  <TableHead className="w-[15%] text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -327,11 +327,11 @@ export default function CrowdStrikeActorsTable() {
                       <TableRow>
                         <TableCell className="font-medium">
                           <div className="flex items-center">
-                            <span>{actor.name}</span>
+                            <span className="break-words">{actor.name}</span>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7 ml-1"
+                              className="h-7 w-7 ml-1 flex-shrink-0"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 toggleRowExpansion(actor.actor_id);
@@ -343,15 +343,15 @@ export default function CrowdStrikeActorsTable() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          {actor.adversary_type || 'Unknown'}
+                          <span className="break-words">{actor.adversary_type || 'Unknown'}</span>
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
                             {actor.origins && actor.origins.length > 0 ? (
                               actor.origins.map((origin, index) => (
-                                <Badge key={index} variant="outline" className="flex items-center gap-1">
-                                  <Globe className="h-3 w-3" />
-                                  {origin}
+                                <Badge key={index} variant="outline" className="flex items-center gap-1 break-words">
+                                  <Globe className="h-3 w-3 flex-shrink-0" />
+                                  <span className="break-all">{origin}</span>
                                 </Badge>
                               ))
                             ) : (
@@ -359,12 +359,13 @@ export default function CrowdStrikeActorsTable() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell>{formatDate(actor.last_update_date)}</TableCell>
+                        <TableCell><span className="break-words">{formatDate(actor.last_update_date)}</span></TableCell>
                         <TableCell className="text-right">
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => toggleRowExpansion(actor.actor_id)}
+                            className="whitespace-nowrap"
                           >
                             {expandedRows.has(actor.actor_id) ? (
                               <ChevronUp className="h-4 w-4 mr-1" />
@@ -379,16 +380,17 @@ export default function CrowdStrikeActorsTable() {
                         <TableRow>
                           <TableCell colSpan={5} className="p-4 bg-gray-50">
                             <div className="text-sm">
-                              <div className="flex justify-between items-start mb-4">
+                              <div className="flex flex-wrap justify-between items-start mb-4 gap-2">
                                 <h4 className="font-semibold">Details</h4>
                                 <Button
                                   size="sm"
                                   variant="outline"
                                   className="text-blue-600 hover:text-blue-800"
                                   onClick={() => {
-                                    // This would normally link to a full report page
-                                    // For demo purposes, we're just toggling the expanded view
-                                    window.open(`https://intelligence.crowdstrike.com/actors/${actor.actor_id}`, '_blank');
+                                    // Format actor name for URL: convert to lowercase and replace spaces with hyphens
+                                    const formattedActorName = actor.name.toLowerCase().replace(/\s+/g, '-');
+                                    // Use the new URL structure for CrowdStrike threat actors
+                                    window.open(`https://falcon.crowdstrike.com/intelligence-v2/actors/${formattedActorName}/summary`, '_blank');
                                   }}
                                 >
                                   <ExternalLink className="h-4 w-4 mr-1" />
@@ -399,7 +401,7 @@ export default function CrowdStrikeActorsTable() {
                               {actor.description && (
                                 <div className="mb-3">
                                   <h5 className="font-medium text-gray-700 mb-1">Description</h5>
-                                  <p className="text-gray-600">{actor.description}</p>
+                                  <p className="text-gray-600 break-words">{actor.description}</p>
                                 </div>
                               )}
                               
@@ -408,7 +410,7 @@ export default function CrowdStrikeActorsTable() {
                                   <h5 className="font-medium text-gray-700 mb-1">Capabilities</h5>
                                   <ul className="list-disc pl-5 text-gray-600">
                                     {actor.capabilities.map((capability, index) => (
-                                      <li key={index}>{capability}</li>
+                                      <li key={index} className="break-words">{capability}</li>
                                     ))}
                                   </ul>
                                 </div>
@@ -419,7 +421,7 @@ export default function CrowdStrikeActorsTable() {
                                   <h5 className="font-medium text-gray-700 mb-1">Motivations</h5>
                                   <ul className="list-disc pl-5 text-gray-600">
                                     {actor.motivations.map((motivation, index) => (
-                                      <li key={index}>{motivation}</li>
+                                      <li key={index} className="break-words">{motivation}</li>
                                     ))}
                                   </ul>
                                 </div>
@@ -430,7 +432,7 @@ export default function CrowdStrikeActorsTable() {
                                   <h5 className="font-medium text-gray-700 mb-1">Objectives</h5>
                                   <ul className="list-disc pl-5 text-gray-600">
                                     {actor.objectives.map((objective, index) => (
-                                      <li key={index}>{objective}</li>
+                                      <li key={index} className="break-words">{objective}</li>
                                     ))}
                                   </ul>
                                 </div>

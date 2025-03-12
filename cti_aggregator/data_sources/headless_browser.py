@@ -137,6 +137,8 @@ def scrape_intelligence_articles_headless(url: str, source_name: str,
                                          date_format: str = None,
                                          summary_selector: str = None,
                                          url_prefix: str = None,
+                                         threat_actor_type_selector: str = None,
+                                         target_industries_selector: str = None,
                                          wait_time: int = 3) -> List[Dict[str, Any]]:
     """
     Scrape intelligence articles using a headless browser.
@@ -151,6 +153,8 @@ def scrape_intelligence_articles_headless(url: str, source_name: str,
         date_format: Format string for parsing dates
         summary_selector: CSS selector for article summaries
         url_prefix: Prefix to add to relative URLs
+        threat_actor_type_selector: CSS selector for threat actor type
+        target_industries_selector: CSS selector for target industries
         wait_time: Additional time to wait after page load
         
     Returns:
@@ -227,13 +231,29 @@ def scrape_intelligence_articles_headless(url: str, source_name: str,
             if len(summary) > 500:
                 summary = summary[:500] + '...'
             
+            # Extract threat actor type
+            threat_actor_type = None
+            if threat_actor_type_selector:
+                threat_actor_elem = article.select_one(threat_actor_type_selector)
+                if threat_actor_elem:
+                    threat_actor_type = threat_actor_elem.text.strip()
+            
+            # Extract target industries
+            target_industries = None
+            if target_industries_selector:
+                target_industries_elem = article.select_one(target_industries_selector)
+                if target_industries_elem:
+                    target_industries = target_industries_elem.text.strip()
+            
             # Add the article to the list
             articles.append({
                 'title': title,
                 'url': article_url,
                 'source': source_name,
                 'published_date': published_date,
-                'summary': summary
+                'summary': summary,
+                'threat_actor_type': threat_actor_type,
+                'target_industries': target_industries
             })
             
         except Exception as e:

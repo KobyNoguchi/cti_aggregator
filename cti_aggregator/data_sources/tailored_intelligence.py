@@ -9,12 +9,11 @@ import os
 import sys
 import json
 import logging
-import datetime
+from datetime import datetime, timedelta
 import redis
 from uuid import uuid4
 import django
 import random
-from datetime import timedelta
 from typing import Dict, List, Optional, Tuple, Union, Any
 
 # Load environment variables from .env file
@@ -32,7 +31,7 @@ except ImportError:
 
 # Add the project root directory to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.backend.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
 django.setup()
 
 # Import models after Django setup
@@ -81,7 +80,6 @@ if BACKEND_DIR not in sys.path:
 try:
     # Set up Django environment
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
-    import django
     django.setup()
     
     # Import models
@@ -188,6 +186,8 @@ def fetch_tailored_intel(api_client_id=None, api_client_secret=None, base_url=No
         # Create the API client using the Intel class specifically
         if not falcon:
             from falconpy import Intel
+            # If base_url is None, use the default US Cloud URL
+            base_url = base_url or 'https://api.crowdstrike.com'
             falcon = Intel(client_id=api_client_id,
                          client_secret=api_client_secret,
                          base_url=base_url)
@@ -492,29 +492,34 @@ def update_database(reports):
 
 def generate_sample_data(count: int = 10) -> List[Dict]:
     """
-    Generate a simple error message instead of sample data.
+    Generate sample intelligence data for testing.
     
     Args:
-        count: Number of items requested (unused)
+        count: Number of sample items to generate
         
     Returns:
-        A list with a single error object
+        A list of sample intelligence objects
     """
-    logger.info("Sample data generation has been disabled")
+    logger.info("Generating sample data for testing")
     
-    return [{
-        "id": "error-404",
-        "name": "404 Not Found",
-        "publish_date": datetime.now().isoformat(),
-        "last_updated": datetime.now().isoformat(),
-        "summary": "Could not retrieve intelligence data from the server. Sample data generation has been disabled.",
-        "url": None,
-        "threat_groups": [],
-        "targeted_sectors": [],
-        "nation_affiliations": [],
-        "targeted_countries": [],
-        "raw_data": {}
-    }]
+    samples = []
+    for i in range(count):
+        sample = {
+            "id": f"sample-{i+1}",
+            "name": f"Sample Intelligence Report {i+1}",
+            "publish_date": datetime.now().isoformat(),
+            "last_updated": datetime.now().isoformat(),
+            "summary": f"This is a sample intelligence report #{i+1} generated for testing purposes.",
+            "url": f"https://example.com/reports/sample-{i+1}",
+            "threat_groups": random.sample(SAMPLE_THREAT_GROUPS, k=min(3, len(SAMPLE_THREAT_GROUPS))),
+            "targeted_sectors": random.sample(SAMPLE_SECTORS, k=min(2, len(SAMPLE_SECTORS))),
+            "nation_affiliations": ["Sample Nation"],
+            "targeted_countries": ["Sample Country"],
+            "raw_data": {}
+        }
+        samples.append(sample)
+    
+    return samples
 
 def save_to_database(reports: List[Dict]) -> Tuple[int, int]:
     """Save reports to the database."""
@@ -644,20 +649,25 @@ def run_update(use_cache: bool = True, force_refresh: bool = False) -> List[Dict
         # Get API credentials from environment
         client_id = os.environ.get('FALCON_CLIENT_ID')
         client_secret = os.environ.get('FALCON_CLIENT_SECRET')
+        console_url = os.environ.get('FALCON_BASE_URL', 'https://falcon.crowdstrike.com')
+        
+        # The API URL is different from the console URL
+        api_url = 'https://api.crowdstrike.com'
         
         if not client_id or not client_secret:
             logger.error("CrowdStrike API credentials not found in environment variables")
             logger.error("Please set FALCON_CLIENT_ID and FALCON_CLIENT_SECRET")
             logger.info("Using sample data as fallback")
             created, updated = save_to_database(sample_data)
-            logger.info(f"Saved {len(sample_data)} sample reports to database: {created} created, {updated} updated")
+            logger.warning("No reports were saved to the database, using sample data")
             return sample_data
             
-        # Fetch data using our improved fetch_tailored_intel function
+        # Fetch tailored intelligence reports from API
         reports = fetch_tailored_intel(
             api_client_id=client_id,
             api_client_secret=client_secret,
-            use_cache=(use_cache and not force_refresh)
+            base_url=api_url,
+            use_cache=use_cache
         )
         
         if not reports:

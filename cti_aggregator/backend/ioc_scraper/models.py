@@ -23,6 +23,9 @@ class IntelligenceArticle(models.Model):
     url = models.URLField(unique=True)  # Use URL as unique identifier to avoid duplicates
     published_date = models.DateTimeField()
     summary = models.TextField(blank=True, null=True)
+    # New fields for threat intelligence data
+    threat_actor_type = models.CharField(max_length=100, blank=True, null=True)
+    target_industries = models.TextField(blank=True, null=True)
     
     class Meta:
         ordering = ['-published_date']

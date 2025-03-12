@@ -2,33 +2,36 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Install system dependencies including Chrome and X virtual framebuffer
+RUN apt-get update && apt-get install -y \
+    gnupg \
+    wget \
+    curl \
+    unzip \
+    xvfb \
+    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
+    && apt-get clean
 
-# Copy requirements file
-COPY requirements.txt .
+# Install Chrome WebDriver
+RUN CHROME_DRIVER_VERSION=`curl -sS chromedriver.storage.googleapis.com/LATEST_RELEASE` && \
+    wget -q -O /tmp/chromedriver.zip https://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip && \
+    unzip /tmp/chromedriver.zip -d /usr/bin/ && \
+    rm /tmp/chromedriver.zip && \
+    chmod +x /usr/bin/chromedriver
 
-# Install Python dependencies
+# Copy requirements and install dependencies
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy project files
-COPY backend/ /app/backend/
-COPY data_sources/ /app/data_sources/
+# Copy application code
+COPY backend /app/backend
+COPY data_sources /app/data_sources
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    DJANGO_SETTINGS_MODULE=backend.settings
-
-# Expose port
-EXPOSE 8000
-
-# Set working directory to backend
+# Set working directory to the Django project
 WORKDIR /app/backend
 
-# Run Django server
+# Run the Django development server
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"] 

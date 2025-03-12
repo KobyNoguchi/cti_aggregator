@@ -19,24 +19,13 @@ from backend.celery import app as celery_app
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Import Celery inspect functionality
+# Import Celery inspect functionality - Use direct import for Celery 5.x
 try:
-    # For Celery 5.x
-    from celery.app.control import inspect
-    logger.debug("Successfully imported inspect from celery.app.control")
+    from celery.app.control import Inspect as inspect
+    logger.info("Successfully imported Inspect from celery.app.control")
 except ImportError:
-    try:
-        # For Celery 4.x
-        from celery.control import inspect
-        logger.debug("Successfully imported inspect from celery.control")
-    except ImportError:
-        try:
-            # Fallback method
-            from celery import inspect
-            logger.debug("Successfully imported inspect from celery")
-        except ImportError:
-            logger.warning("Could not import celery inspect functionality. Some monitoring features may be unavailable.")
-            inspect = None
+    logger.warning("Could not import celery inspect functionality. Some monitoring features may be unavailable.")
+    inspect = None
 
 # Add the parent directory to sys.path to allow importing from data_sources
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
@@ -105,7 +94,6 @@ def fetch_all_intelligence():
         fetch_mandiant_intelligence.s(),
         fetch_unit42_intelligence.s(),
         fetch_zscaler_intelligence.s(),
-        fetch_orange_defense_intelligence.s(),
         fetch_google_tag_intelligence.s(),
     ]
     
@@ -173,54 +161,120 @@ def fetch_cisco_talos_intelligence():
     source_name = "Cisco Talos"
     
     try:
+        if ENHANCED_SCRAPER_AVAILABLE:
+            # Use the enhanced scraper with appropriate selectors
+            articles = scrape_intelligence_articles(
+                url=url,
+                source_name=source_name,
+                article_selector='article.post',
+                title_selector='h2.post-title a',
+                url_selector='h2.post-title a',
+                date_selector='time.published',
+                date_format=None,  # Auto-detect date format
+                summary_selector='.entry-content',
+                url_prefix=None,  # URLs are already absolute
+                # Add selectors for threat actor type and target industries
+                threat_actor_type_selector='.post-labels a[rel="tag"]:nth-of-type(1)',  # Example: first tag
+                target_industries_selector='.post-labels a[rel="tag"]:nth-of-type(2)'   # Example: second tag
+            )
+            
+            count = 0
+            for article in articles:
+                # Save to database with new fields
+                IntelligenceArticle.objects.update_or_create(
+                    url=article['url'],
+                    defaults={
+                        'title': article['title'],
+                        'source': source_name,
+                        'published_date': article['published_date'],
+                        'summary': article['summary'],
+                        'threat_actor_type': article.get('threat_actor_type'),
+                        'target_industries': article.get('target_industries')
+                    }
+                )
+                count += 1
+            
+            logger.info(f"Updated {count} {source_name} intelligence articles using enhanced scraper")
+            return f"Updated {count} {source_name} intelligence articles using enhanced scraper"
+        
+        # Fallback to basic scraper
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         response = requests.get(url, headers=headers)
         if response.status_code != 200:
-            logger.error(f"Failed to fetch {source_name} data: {response.status_code}")
-            return f"Failed to fetch {source_name} data: {response.status_code}"
+            logger.error(f"Failed to fetch {source_name} intelligence - Status Code: {response.status_code}")
+            return f"Failed to fetch {source_name} intelligence"
         
         soup = BeautifulSoup(response.text, 'html.parser')
         articles = soup.select('article.post')
         
         count = 0
         for article in articles:
-            title_elem = article.select_one('h2.post-title a')
-            if not title_elem:
+            try:
+                title_elem = article.select_one('h2.post-title a')
+                if not title_elem:
+                    continue
+                    
+                title = title_elem.text.strip()
+                url = title_elem['href']
+                
+                # Extract date
+                date_elem = article.select_one('time.published')
+                published_date = datetime.now()
+                if date_elem:
+                    try:
+                        date_str = date_elem.text.strip()
+                        for fmt in ['%B %d, %Y', '%b %d, %Y']:
+                            try:
+                                published_date = datetime.strptime(date_str, fmt)
+                                break
+                            except ValueError:
+                                continue
+                    except Exception as e:
+                        logger.warning(f"Error parsing date for {title}: {str(e)}")
+                
+                # Extract summary
+                summary_elem = article.select_one('.entry-content')
+                summary = summary_elem.text.strip() if summary_elem else ""
+                if len(summary) > 500:
+                    summary = summary[:500] + "..."
+                
+                # Extract threat actor type and target industries (best effort in basic scraper)
+                threat_actor_type = None
+                target_industries = None
+                
+                # Look for tags or categories that might indicate threat actors or industries
+                tag_elems = article.select('.post-labels a[rel="tag"]')
+                if len(tag_elems) >= 1:
+                    threat_actor_type = tag_elems[0].text.strip()
+                if len(tag_elems) >= 2:
+                    target_industries = tag_elems[1].text.strip()
+                
+                # Save to database with new fields
+                IntelligenceArticle.objects.update_or_create(
+                    url=url,
+                    defaults={
+                        'title': title,
+                        'source': source_name,
+                        'published_date': published_date,
+                        'summary': summary,
+                        'threat_actor_type': threat_actor_type,
+                        'target_industries': target_industries
+                    }
+                )
+                count += 1
+                
+            except Exception as e:
+                logger.error(f"Error processing article from {source_name}: {str(e)}")
                 continue
                 
-            title = title_elem.text.strip()
-            article_url = title_elem['href']
-            
-            # Extract date
-            date_elem = article.select_one('time.published')
-            if date_elem and date_elem.get('datetime'):
-                published_date = datetime.fromisoformat(date_elem['datetime'].replace('Z', '+00:00'))
-            else:
-                published_date = datetime.now()
-            
-            # Extract summary
-            summary_elem = article.select_one('.entry-content')
-            summary = summary_elem.text.strip() if summary_elem else ""
-            
-            # Update or create article
-            IntelligenceArticle.objects.update_or_create(
-                url=article_url,
-                defaults={
-                    'title': title,
-                    'source': source_name,
-                    'published_date': published_date,
-                    'summary': summary[:500] + ('...' if len(summary) > 500 else '')
-                }
-            )
-            count += 1
-        
-        logger.info(f"Updated {count} {source_name} intelligence articles")
-        return f"Updated {count} {source_name} intelligence articles"
+        logger.info(f"Updated {count} {source_name} intelligence articles using basic scraper")
+        return f"Updated {count} {source_name} intelligence articles using basic scraper"
+    
     except Exception as e:
-        logger.error(f"Error fetching {source_name} data: {str(e)}")
-        return f"Error fetching {source_name} data: {str(e)}"
+        logger.error(f"Error fetching {source_name} intelligence: {str(e)}")
+        return f"Error fetching {source_name} intelligence: {str(e)}"
 
 @shared_task
 def fetch_microsoft_intelligence():
@@ -291,6 +345,38 @@ def fetch_mandiant_intelligence():
     source_name = "Mandiant"
     
     try:
+        if ENHANCED_SCRAPER_AVAILABLE:
+            # Use the enhanced scraper with appropriate selectors
+            articles = scrape_intelligence_articles(
+                url=url,
+                source_name=source_name,
+                article_selector='.m-card',  # This is the article container class
+                title_selector='.m-card__title',  # Title selector
+                url_selector='.m-card__link',  # URL selector
+                date_selector='.m-card__date',  # Date selector
+                date_format=None,  # Auto-detect date format
+                summary_selector='.m-card__desc',  # Summary selector
+                url_prefix="https://www.mandiant.com"  # Add prefix to relative URLs
+            )
+            
+            count = 0
+            for article in articles:
+                # Save to database
+                IntelligenceArticle.objects.update_or_create(
+                    url=article['url'],
+                    defaults={
+                        'title': article['title'],
+                        'source': source_name,
+                        'published_date': article['published_date'],
+                        'summary': article['summary']
+                    }
+                )
+                count += 1
+            
+            logger.info(f"Updated {count} {source_name} intelligence articles using enhanced scraper")
+            return f"Updated {count} {source_name} intelligence articles using enhanced scraper"
+        
+        # Fallback to basic scraper
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
@@ -300,32 +386,46 @@ def fetch_mandiant_intelligence():
             return f"Failed to fetch {source_name} data: {response.status_code}"
         
         soup = BeautifulSoup(response.text, 'html.parser')
-        articles = soup.select('.blog-card')
+        articles = soup.select('.m-card')  # Article container
         
         count = 0
         for article in articles:
-            title_elem = article.select_one('.blog-card__title a')
+            title_elem = article.select_one('.m-card__title')
             if not title_elem:
                 continue
                 
             title = title_elem.text.strip()
-            article_url = title_elem['href']
-            if not article_url.startswith('http'):
+            
+            url_elem = article.select_one('.m-card__link')
+            article_url = url_elem['href'] if url_elem and 'href' in url_elem.attrs else None
+            
+            # Add prefix if URL is relative
+            if article_url and not article_url.startswith(('http://', 'https://')):
                 article_url = 'https://www.mandiant.com' + article_url
+                
+            if not article_url:
+                continue
             
             # Extract date
-            date_elem = article.select_one('.blog-card__date')
+            date_elem = article.select_one('.m-card__date')
             if date_elem:
                 date_text = date_elem.text.strip()
                 try:
-                    published_date = datetime.strptime(date_text, '%B %d, %Y')
-                except ValueError:
+                    for fmt in ['%B %d, %Y', '%b %d, %Y', '%Y-%m-%d', '%d %b %Y']:
+                        try:
+                            published_date = datetime.strptime(date_text, fmt)
+                            break
+                        except ValueError:
+                            continue
+                    else:
+                        published_date = datetime.now()
+                except Exception:
                     published_date = datetime.now()
             else:
                 published_date = datetime.now()
             
             # Extract summary
-            summary_elem = article.select_one('.blog-card__description')
+            summary_elem = article.select_one('.m-card__desc')
             summary = summary_elem.text.strip() if summary_elem else ""
             
             # Update or create article
@@ -514,23 +614,53 @@ def update_tailored_intelligence():
 
 @shared_task
 def fetch_unit42_intelligence():
-    """Fetch intelligence articles from Palo Alto Unit42"""
-    url = "https://unit42.paloaltonetworks.com/"
+    """Fetch intelligence articles from Palo Alto Networks Unit42"""
+    url = "https://unit42.paloaltonetworks.com/category/threat-research/"
     source_name = "Unit42"
     
     try:
+        if ENHANCED_SCRAPER_AVAILABLE:
+            # Use the enhanced scraper with appropriate selectors
+            articles = scrape_intelligence_articles(
+                url=url,
+                source_name=source_name,
+                article_selector='article.type-post',  # Article container
+                title_selector='h2.entry-title a',  # Title selector
+                url_selector='h2.entry-title a',  # URL selector
+                date_selector='.entry-date',  # Date selector
+                date_format=None,  # Auto-detect date format
+                summary_selector='.entry-summary',  # Summary selector
+                url_prefix=None  # URLs are absolute
+            )
+            
+            count = 0
+            for article in articles:
+                # Save to database
+                IntelligenceArticle.objects.update_or_create(
+                    url=article['url'],
+                    defaults={
+                        'title': article['title'],
+                        'source': source_name,
+                        'published_date': article['published_date'],
+                        'summary': article['summary']
+                    }
+                )
+                count += 1
+            
+            logger.info(f"Updated {count} {source_name} intelligence articles using enhanced scraper")
+            return f"Updated {count} {source_name} intelligence articles using enhanced scraper"
+        
+        # Fallback to basic scraper
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         response = requests.get(url, headers=headers)
-        logger.info(f"Unit42 fetch status: {response.status_code}")
-        
         if response.status_code != 200:
             logger.error(f"Failed to fetch {source_name} data: {response.status_code}")
             return f"Failed to fetch {source_name} data: {response.status_code}"
         
         soup = BeautifulSoup(response.text, 'html.parser')
-        articles = soup.select('article.entry')
+        articles = soup.select('article.type-post')
         
         count = 0
         for article in articles:
@@ -542,14 +672,26 @@ def fetch_unit42_intelligence():
             article_url = title_elem['href']
             
             # Extract date
-            date_elem = article.select_one('time.entry-date')
-            if date_elem and date_elem.get('datetime'):
-                published_date = datetime.fromisoformat(date_elem['datetime'].replace('Z', '+00:00'))
+            date_elem = article.select_one('.entry-date')
+            if date_elem:
+                date_text = date_elem.text.strip()
+                try:
+                    # Try common date formats
+                    for fmt in ['%B %d, %Y', '%b %d, %Y', '%Y-%m-%d', '%d %b %Y']:
+                        try:
+                            published_date = datetime.strptime(date_text, fmt)
+                            break
+                        except ValueError:
+                            continue
+                    else:
+                        published_date = datetime.now()
+                except Exception:
+                    published_date = datetime.now()
             else:
                 published_date = datetime.now()
             
             # Extract summary
-            summary_elem = article.select_one('.entry-content, .entry-summary')
+            summary_elem = article.select_one('.entry-summary')
             summary = summary_elem.text.strip() if summary_elem else ""
             
             # Update or create article
@@ -572,48 +714,88 @@ def fetch_unit42_intelligence():
 
 @shared_task
 def fetch_zscaler_intelligence():
-    """Fetch intelligence articles from ZScaler Security Research Blog"""
+    """Fetch intelligence articles from Zscaler Security Research Blog"""
     url = "https://www.zscaler.com/blogs/security-research"
-    source_name = "ZScaler Security"
+    source_name = "Zscaler"
     
     try:
+        if ENHANCED_SCRAPER_AVAILABLE:
+            # Use the enhanced scraper with appropriate selectors
+            articles = scrape_intelligence_articles(
+                url=url,
+                source_name=source_name,
+                article_selector='.blog-post',  # Article container
+                title_selector='h3.blog-title a',  # Title selector
+                url_selector='h3.blog-title a',  # URL selector 
+                date_selector='.blog-date',  # Date selector
+                date_format=None,  # Auto-detect date format
+                summary_selector='.blog-summary',  # Summary selector
+                url_prefix="https://www.zscaler.com"  # Add prefix to relative URLs
+            )
+            
+            count = 0
+            for article in articles:
+                # Save to database
+                IntelligenceArticle.objects.update_or_create(
+                    url=article['url'],
+                    defaults={
+                        'title': article['title'],
+                        'source': source_name,
+                        'published_date': article['published_date'],
+                        'summary': article['summary']
+                    }
+                )
+                count += 1
+            
+            logger.info(f"Updated {count} {source_name} intelligence articles using enhanced scraper")
+            return f"Updated {count} {source_name} intelligence articles using enhanced scraper"
+        
+        # Fallback to basic scraper
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         response = requests.get(url, headers=headers)
-        logger.info(f"ZScaler fetch status: {response.status_code}")
-        
         if response.status_code != 200:
             logger.error(f"Failed to fetch {source_name} data: {response.status_code}")
             return f"Failed to fetch {source_name} data: {response.status_code}"
         
         soup = BeautifulSoup(response.text, 'html.parser')
-        articles = soup.select('.view-content .views-row')
+        articles = soup.select('.blog-post')
         
         count = 0
         for article in articles:
-            title_elem = article.select_one('h3 a')
+            title_elem = article.select_one('h3.blog-title a')
             if not title_elem:
                 continue
                 
             title = title_elem.text.strip()
             article_url = title_elem['href']
-            if not article_url.startswith('http'):
+            
+            # Add prefix if URL is relative
+            if not article_url.startswith(('http://', 'https://')):
                 article_url = 'https://www.zscaler.com' + article_url
             
             # Extract date
-            date_elem = article.select_one('.views-field-created-1')
+            date_elem = article.select_one('.blog-date')
             if date_elem:
                 date_text = date_elem.text.strip()
                 try:
-                    published_date = datetime.strptime(date_text, '%B %d, %Y')
-                except ValueError:
+                    # Try common date formats
+                    for fmt in ['%B %d, %Y', '%b %d, %Y', '%Y-%m-%d', '%d %b %Y']:
+                        try:
+                            published_date = datetime.strptime(date_text, fmt)
+                            break
+                        except ValueError:
+                            continue
+                    else:
+                        published_date = datetime.now()
+                except Exception:
                     published_date = datetime.now()
             else:
                 published_date = datetime.now()
             
             # Extract summary
-            summary_elem = article.select_one('.views-field-body')
+            summary_elem = article.select_one('.blog-summary')
             summary = summary_elem.text.strip() if summary_elem else ""
             
             # Update or create article
@@ -707,8 +889,6 @@ def fetch_dark_reading_intelligence():
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         response = requests.get(url, headers=headers)
-        logger.info(f"Dark Reading fetch status: {response.status_code}")
-        
         if response.status_code != 200:
             logger.error(f"Failed to fetch {source_name} data: {response.status_code}")
             return f"Failed to fetch {source_name} data: {response.status_code}"
@@ -742,6 +922,19 @@ def fetch_dark_reading_intelligence():
             summary_elem = article.select_one('.deck')
             summary = summary_elem.text.strip() if summary_elem else ""
             
+            # Extract threat actor type from article tags (if available)
+            threat_actor_type = None
+            target_industries = None
+            
+            # Try to find tags that might indicate threat actors or industries
+            tag_elems = article.select('.article-topics a')
+            if len(tag_elems) >= 1:
+                # First tag might be a threat actor
+                threat_actor_type = tag_elems[0].text.strip()
+            if len(tag_elems) >= 2:
+                # Second tag might be target industries
+                target_industries = tag_elems[1].text.strip()
+            
             # Update or create article
             IntelligenceArticle.objects.update_or_create(
                 url=article_url,
@@ -749,7 +942,9 @@ def fetch_dark_reading_intelligence():
                     'title': title,
                     'source': source_name,
                     'published_date': published_date,
-                    'summary': summary[:500] + ('...' if len(summary) > 500 else '')
+                    'summary': summary[:500] + ('...' if len(summary) > 500 else ''),
+                    'threat_actor_type': threat_actor_type,
+                    'target_industries': target_industries
                 }
             )
             count += 1
@@ -762,47 +957,89 @@ def fetch_dark_reading_intelligence():
 
 @shared_task
 def fetch_google_tag_intelligence():
-    """Fetch intelligence articles from Google Threat Analysis Group"""
+    """Fetch intelligence articles from Google Threat Analysis Group blog"""
     url = "https://blog.google/threat-analysis-group/"
     source_name = "Google TAG"
     
     try:
+        if ENHANCED_SCRAPER_AVAILABLE:
+            # Use the enhanced scraper with appropriate selectors
+            articles = scrape_intelligence_articles(
+                url=url,
+                source_name=source_name,
+                article_selector='.blogPost',  # Article container
+                title_selector='h2 a',  # Title selector
+                url_selector='h2 a',  # URL selector
+                date_selector='.blogPost__byline-info time',  # Date selector
+                date_format=None,  # Auto-detect format
+                summary_selector='.post-snippet',  # Summary selector
+                url_prefix=None,  # URLs are absolute 
+                use_headless_fallback=True  # Use headless browser if needed
+            )
+            
+            count = 0
+            for article in articles:
+                # Save to database
+                IntelligenceArticle.objects.update_or_create(
+                    url=article['url'],
+                    defaults={
+                        'title': article['title'],
+                        'source': source_name,
+                        'published_date': article['published_date'],
+                        'summary': article['summary']
+                    }
+                )
+                count += 1
+            
+            logger.info(f"Updated {count} {source_name} intelligence articles using enhanced scraper")
+            return f"Updated {count} {source_name} intelligence articles using enhanced scraper"
+        
+        # Fallback to basic scraper
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         response = requests.get(url, headers=headers)
-        logger.info(f"Google TAG fetch status: {response.status_code}")
-        
         if response.status_code != 200:
             logger.error(f"Failed to fetch {source_name} data: {response.status_code}")
             return f"Failed to fetch {source_name} data: {response.status_code}"
         
         soup = BeautifulSoup(response.text, 'html.parser')
-        articles = soup.select('article.blog-c-entry')
+        articles = soup.select('.blogPost')
         
         count = 0
         for article in articles:
-            title_elem = article.select_one('h2.blog-c-entry__title a')
+            title_elem = article.select_one('h2 a')
             if not title_elem:
                 continue
                 
             title = title_elem.text.strip()
             article_url = title_elem['href']
-            if not article_url.startswith('http'):
+            
+            # Ensure URL is absolute
+            if not article_url.startswith(('http://', 'https://')):
                 article_url = 'https://blog.google' + article_url
             
             # Extract date
-            date_elem = article.select_one('time')
-            if date_elem and date_elem.get('datetime'):
+            date_elem = article.select_one('.blogPost__byline-info time')
+            if date_elem:
+                date_text = date_elem.text.strip()
                 try:
-                    published_date = datetime.fromisoformat(date_elem['datetime'].replace('Z', '+00:00'))
-                except ValueError:
+                    # Try common date formats
+                    for fmt in ['%B %d, %Y', '%b %d, %Y', '%Y-%m-%d', '%d %b %Y']:
+                        try:
+                            published_date = datetime.strptime(date_text, fmt)
+                            break
+                        except ValueError:
+                            continue
+                    else:
+                        published_date = datetime.now()
+                except Exception:
                     published_date = datetime.now()
             else:
                 published_date = datetime.now()
             
             # Extract summary
-            summary_elem = article.select_one('.blog-c-entry__snippet')
+            summary_elem = article.select_one('.post-snippet')
             summary = summary_elem.text.strip() if summary_elem else ""
             
             # Update or create article
@@ -825,79 +1062,64 @@ def fetch_google_tag_intelligence():
 
 @shared_task
 def fetch_dark_reading_enhanced():
-    """Fetch intelligence articles from Dark Reading using the free enhanced scraper"""
-    source_name = "Dark Reading"
+    """Fetch intelligence articles from Dark Reading using the enhanced scraper"""
     url = "https://www.darkreading.com/threat-intelligence"
-    
-    if not ENHANCED_SCRAPER_AVAILABLE:
-        logger.warning(f"Enhanced scraper not available for {source_name}, falling back to standard scraper")
-        return fetch_dark_reading_intelligence()
+    source_name = "Dark Reading"
     
     try:
-        logger.info(f"Fetching {source_name} intelligence using free enhanced scraper")
-        logger.info(f"Free proxy system configured: {is_free_proxy_configured()}")
+        if not ENHANCED_SCRAPER_AVAILABLE:
+            return fetch_dark_reading_intelligence()
+            
+        # Use the enhanced scraper with appropriate selectors
+        articles = scrape_intelligence_articles(
+            url=url,
+            source_name=source_name,
+            article_selector='.article-info',  # Article container
+            title_selector='h3 a',  # Title selector
+            url_selector='h3 a',  # URL selector
+            date_selector='.timestamp',  # Date selector
+            date_format='%b %d, %Y',  # Date format 
+            summary_selector='.deck',  # Summary selector
+            url_prefix=None,  # URLs are absolute
+            use_headless_fallback=True  # Use headless browser as fallback if normal scraping fails
+        )
         
-        # Use the free enhanced scraper
-        try:
+        if not articles:
+            logger.warning(f"No articles found for {source_name} using enhanced scraper")
+            # Try again with different selectors
+            logger.info(f"Trying with alternate selectors for {source_name}")
             articles = scrape_intelligence_articles(
                 url=url,
                 source_name=source_name,
-                article_selector=".article-info",
-                title_selector="h3 a",
-                date_selector=".timestamp",
-                date_format="%b %d, %Y",
-                summary_selector=".deck",
-                url_prefix="https://www.darkreading.com",
-                use_proxies=True,
-                max_retries=4
+                article_selector='.list-item',  # Alternate article container
+                title_selector='h4 a',  # Alternate title selector
+                url_selector='h4 a',  # Alternate URL selector
+                date_selector='.timestamp',  # Date selector
+                date_format='%b %d, %Y',  # Date format 
+                summary_selector='.description',  # Summary selector
+                url_prefix=None,  # URLs are absolute
+                use_headless_fallback=True  # Use headless browser as fallback
             )
-            
-            if not articles:
-                logger.warning(f"No articles found with proxies, trying direct connection")
-                # If proxies fail, try direct connection
-                articles = scrape_intelligence_articles(
-                    url=url,
-                    source_name=source_name,
-                    article_selector=".article-info",
-                    title_selector="h3 a",
-                    date_selector=".timestamp",
-                    date_format="%b %d, %Y",
-                    summary_selector=".deck",
-                    url_prefix="https://www.darkreading.com",
-                    use_proxies=False,
-                    max_retries=3
-                )
-        except Exception as e:
-            logger.error(f"Error during enhanced scraping: {str(e)}")
-            logger.info("Falling back to standard scraper")
-            return fetch_dark_reading_intelligence()
         
-        if not articles:
-            logger.warning(f"No articles found with enhanced scraper, falling back to standard scraper")
-            return fetch_dark_reading_intelligence()
-        
-        # Update or create articles in the database
         count = 0
         for article in articles:
-            try:
-                IntelligenceArticle.objects.update_or_create(
-                    url=article['url'],
-                    defaults={
-                        'title': article['title'],
-                        'source': article['source'],
-                        'published_date': article['published_date'],
-                        'summary': article['summary']
-                    }
-                )
-                count += 1
-            except Exception as e:
-                logger.error(f"Error saving article {article.get('title', 'Unknown')}: {str(e)}")
+            # Save to database
+            IntelligenceArticle.objects.update_or_create(
+                url=article['url'],
+                defaults={
+                    'title': article['title'],
+                    'source': source_name,
+                    'published_date': article['published_date'],
+                    'summary': article['summary']
+                }
+            )
+            count += 1
         
-        logger.info(f"Updated {count} {source_name} intelligence articles using free enhanced scraper")
-        return f"Updated {count} {source_name} intelligence articles using free enhanced scraper"
+        logger.info(f"Updated {count} {source_name} intelligence articles using enhanced scraper")
+        return f"Updated {count} {source_name} intelligence articles using enhanced scraper"
     except Exception as e:
-        logger.error(f"Error fetching {source_name} data with free enhanced scraper: {str(e)}")
-        logger.info("Falling back to standard scraper as last resort")
+        logger.error(f"Error fetching {source_name} data with enhanced scraper: {str(e)}")
+        # Fall back to the regular scraper
         return fetch_dark_reading_intelligence()
 
 @shared_task
@@ -1020,7 +1242,10 @@ def check_celery_health():
             
         # Initialize inspector
         try:
-            inspector = inspect()
+            # Create an inspector instance for Celery 5.x
+            from backend.celery import app as celery_app
+            inspector = inspect(app=celery_app)
+            
             if inspector is None:
                 logger.warning("Celery health check degraded: inspector could not be initialized")
                 return {

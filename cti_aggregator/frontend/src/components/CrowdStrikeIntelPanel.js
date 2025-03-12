@@ -158,6 +158,8 @@ const CrowdStrikeIntelPanel = () => {
               bg={tagBg} 
               color={tagColor}
               borderRadius="full"
+              wordBreak="break-word"
+              whiteSpace="normal"
             >
               {item}
             </Tag>
@@ -210,8 +212,8 @@ const CrowdStrikeIntelPanel = () => {
                 <h2>
                   <AccordionButton py={3}>
                     <Box flex="1" textAlign="left">
-                      <Flex justify="space-between" align="center">
-                        <Heading size="sm">{actor.name}</Heading>
+                      <Flex justify="space-between" align="center" flexWrap="wrap" gap={2}>
+                        <Heading size="sm" wordBreak="break-word">{actor.name}</Heading>
                         <Badge 
                           bg={headerBg} 
                           color={headerColor}
@@ -231,7 +233,7 @@ const CrowdStrikeIntelPanel = () => {
                   {actor.description && (
                     <Box mb={3}>
                       <Text fontSize="sm" fontWeight="bold">Description:</Text>
-                      <Text fontSize="sm">{actor.description}</Text>
+                      <Text fontSize="sm" wordBreak="break-word">{actor.description}</Text>
                     </Box>
                   )}
 

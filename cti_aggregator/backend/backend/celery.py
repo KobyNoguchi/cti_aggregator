@@ -64,10 +64,10 @@ app.conf.beat_schedule = {
         },
     },
     
-    # Intelligence articles every 4 hours
+    # Intelligence articles every hour (changed from every 4 hours)
     "fetch-intelligence-articles": {
         "task": "ioc_scraper.tasks.fetch_all_intelligence",
-        "schedule": crontab(hour='*/4', minute=0),  # Every 4 hours
+        "schedule": crontab(hour='*', minute=0),  # Every hour
         "options": {
             "expires": 60 * 60 * 3,  # Task expires after 3 hours
             "retry": True,

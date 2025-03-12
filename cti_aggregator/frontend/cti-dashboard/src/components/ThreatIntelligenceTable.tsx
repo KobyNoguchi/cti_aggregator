@@ -85,7 +85,7 @@ export default function ThreatIntelligenceTable() {
         setArticles(response);
         
         // Extract unique sources for filter dropdown
-        const uniqueSources = [...new Set(response.map(article => article.source))];
+        const uniqueSources = [...new Set(response.map((article: IntelligenceArticle) => article.source))];
         setSources(uniqueSources);
         
         setError(null);
@@ -288,9 +288,11 @@ export default function ThreatIntelligenceTable() {
               </TableCaption>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[160px]">Source</TableHead>
                   <TableHead>Title</TableHead>
-                  <TableHead>Date</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Published Date</TableHead>
+                  <TableHead>Threat Actor Type</TableHead>
+                  <TableHead>Target Industries</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -298,34 +300,21 @@ export default function ThreatIntelligenceTable() {
                 {filteredArticles && filteredArticles.length > 0 ? (
                   filteredArticles.map((article) => (
                     <TableRow key={article.id}>
+                      <TableCell className="font-medium">{article.title}</TableCell>
                       <TableCell>
-                        <Badge className={`${getSourceColor(article.source)} px-2 py-1 text-xs font-medium`}>
+                        <Badge variant="outline" className={getSourceColor(article.source)}>
                           {article.source}
                         </Badge>
                       </TableCell>
-                      <TableCell className="font-medium">
-                        <div>
-                          <div className="font-medium">{article.title}</div>
-                          {article.summary && (
-                            <div className="text-sm text-gray-500 mt-1 line-clamp-2">
-                              {article.summary}
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
                       <TableCell>{formatDate(article.published_date)}</TableCell>
+                      <TableCell>{article.threat_actor_type || 'N/A'}</TableCell>
+                      <TableCell>{article.target_industries || 'N/A'}</TableCell>
                       <TableCell className="text-right">
-                        <a 
-                          href={article.url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center text-blue-600 hover:text-blue-800"
-                        >
-                          <Button size="sm" variant="ghost">
-                            <ExternalLink className="h-4 w-4 mr-1" />
-                            View
-                          </Button>
-                        </a>
+                        <Button variant="ghost" size="sm" asChild>
+                          <a href={article.url} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))
