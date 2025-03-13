@@ -28,10 +28,7 @@ function Test-TailoredIntelligence {
 function Test-IntelligenceScrapers {
     Write-Output "Testing all intelligence scrapers..."
     cd $PSScriptRoot/backend
-    
-    # Using Get-Content and piping instead of the < operator
-    Get-Content ../tests/run_scrapers_test.py | python manage.py shell
-    
+    python manage.py shell < ../tests/run_scrapers_test.py
     cd $PSScriptRoot
     if ($LASTEXITCODE -ne 0) {
         Write-Output "Warning: Intelligence scraper tests had failures with exit code $LASTEXITCODE"
