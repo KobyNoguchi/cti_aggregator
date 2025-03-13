@@ -2,7 +2,7 @@
 
 A comprehensive Cyber Threat Intelligence aggregation system that collects, processes, and visualizes threat data from multiple sources.
 
-> **IMPORTANT**: This project uses Docker and Docker Compose to manage all dependencies. You **DO NOT** need to install Redis or any other technologies separately - everything is automatically set up when you run the Docker Compose command. Simply follow the Docker installation instructions below if you don't already have Docker installed.
+> **IMPORTANT**: This project is designed to run on Windows systems. It uses Docker Desktop for Windows to manage all dependencies. You **DO NOT** need to install Redis or any other technologies separately - everything is automatically set up when you run the Docker Compose command.
 
 ## Overview
 
@@ -14,76 +14,29 @@ This project consists of several components:
 
 ## Prerequisites
 
-- Docker and Docker Compose (required for containerized deployment)
-- Git
+- Windows 10/11 operating system
+- Docker Desktop for Windows (required for containerized deployment)
+- Git for Windows
+- PowerShell 7 (recommended, but PowerShell 5.1 also works)
 
-## Pre-Installation: Setting Up Docker and Docker Compose
+## Pre-Installation: Setting Up Docker Desktop for Windows
 
-If you don't have Docker and Docker Compose installed, follow these instructions:
+If you don't have Docker Desktop installed, follow these instructions:
 
-### Installing Docker
-
-#### Windows
-1. Download and install Docker Desktop from [Docker Hub](https://www.docker.com/products/docker-desktop)
+1. Download and install Docker Desktop for Windows from [Docker Hub](https://www.docker.com/products/docker-desktop)
 2. Follow the installation wizard
 3. Docker Compose comes included with Docker Desktop for Windows
-
-#### macOS
-1. Download and install Docker Desktop from [Docker Hub](https://www.docker.com/products/docker-desktop)
-2. Follow the installation wizard
-3. Docker Compose comes included with Docker Desktop for macOS
-
-#### Linux (Ubuntu/Debian)
-1. Update your package index:
-   ```bash
-   sudo apt-get update
+4. After installation, start Docker Desktop and ensure it's running (look for the Docker icon in your system tray)
+5. Verify the installation by opening PowerShell and running:
+   ```powershell
+   docker --version
+   docker-compose --version
    ```
-2. Install dependencies:
-   ```bash
-   sudo apt-get install apt-transport-https ca-certificates curl software-properties-common
-   ```
-3. Add Docker's official GPG key:
-   ```bash
-   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-   ```
-4. Set up the stable repository:
-   ```bash
-   sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-   ```
-5. Update the package index again:
-   ```bash
-   sudo apt-get update
-   ```
-6. Install Docker:
-   ```bash
-   sudo apt-get install docker-ce docker-ce-cli containerd.io
-   ```
-7. Add your user to the docker group to run Docker without sudo:
-   ```bash
-   sudo usermod -aG docker $USER
-   ```
-8. Log out and log back in for the changes to take effect
-
-### Installing Docker Compose (Linux Only)
-1. Download the current stable release of Docker Compose:
-   ```bash
-   sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-   ```
-2. Apply executable permissions:
-   ```bash
-   sudo chmod +x /usr/local/bin/docker-compose
-   ```
-
-### Verify the Installation
-```bash
-docker --version
-docker-compose --version
-```
 
 ## Installation
 
-1. Clone the repository:
-```bash
+1. Clone the repository using PowerShell:
+```powershell
 git clone https://github.com/YOUR_USERNAME/Peregrine.git
 cd Peregrine
 ```
@@ -92,9 +45,11 @@ cd Peregrine
 
 ## Running the Application
 
-The easiest way to run the application is using Docker Compose:
+You have two options to run the application:
 
-```bash
+### Option 1: Using Docker Compose (Recommended)
+
+```powershell
 cd cti_aggregator/docker
 docker-compose up -d
 ```
@@ -105,9 +60,25 @@ This will:
 - Start Celery workers and beat scheduler for background tasks
 - Build and start the React frontend
 
+### Option 2: Using the PowerShell Script
+
+```powershell
+cd cti_aggregator
+.\Test.ps1
+```
+
+This will:
+- Check if Redis is running in Docker and start it if needed
+- Apply any pending database migrations
+- Start the Django backend server
+- Run intelligence tests and updates
+- Start Celery workers and Celery Beat scheduler
+- Start the frontend dashboard
+- Open the dashboard in your default browser
+
 ## Accessing the Application
 
-Once all containers are running:
+Once all components are running:
 - Frontend Dashboard: http://localhost:3000
 - Backend API: http://localhost:8000/api/
 - Admin interface: http://localhost:8000/admin/
@@ -115,10 +86,16 @@ Once all containers are running:
 ## Troubleshooting
 
 ### Docker Issues
-- Ensure Docker daemon is running: `sudo systemctl start docker` (Linux only)
+- Ensure Docker Desktop is running (check system tray for the Docker whale icon)
 - Check container status: `docker ps -a`
 - View container logs: `docker logs [container-name]`
 - Restart all services: `docker-compose down && docker-compose up -d`
+
+### PowerShell Execution Policy
+If you encounter execution policy errors when running PowerShell scripts, try running PowerShell as Administrator and setting:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
 
 ### Port Conflicts
 If you encounter port conflicts, you may have other services using ports 3000, 8000, or 6379. You can modify the port mappings in `docker-compose.yml`.
