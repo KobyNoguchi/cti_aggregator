@@ -57,4 +57,14 @@ For development, you can use the individual requirements.txt files:
 - `data_sources/`: Data collection modules
 - `docker/`: Docker configuration files
 
-## License
+## Starting the Application
+**Option 1: Using Docker Compose (recommended)**
+*In PowerShell*
+- cd cti_aggregator/docker
+- docker-compose up -d
+
+**Option 2: Using the PowerShell Script**
+*In PowerShell*
+- cd cti_aggregator
+- .\Test.ps1
+
