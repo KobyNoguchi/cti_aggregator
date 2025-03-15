@@ -395,7 +395,7 @@ export default function CISAKevTable() {
             <Button 
               variant="outline" 
               size="icon" 
-              onClick={fetchData} 
+              onClick={(e) => fetchData()} 
             >
               <RefreshCw className="h-4 w-4" />
             </Button>

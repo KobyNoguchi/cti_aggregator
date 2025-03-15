@@ -3,9 +3,9 @@
 # Function to run the tailored intelligence update
 function Update-TailoredIntelligence {
     Write-Output "Updating CrowdStrike Tailored Intelligence data..."
-    cd $PSScriptRoot
+    # Skip this line
     python run_tailored_intel_update.py
-    if ($LASTEXITCODE -ne 0) {
+    # Skip this line
         Write-Output "Warning: Tailored Intelligence update failed with exit code $LASTEXITCODE"
     } else {
         Write-Output "Tailored Intelligence data updated successfully!"
@@ -15,9 +15,9 @@ function Update-TailoredIntelligence {
 # Function to run the tailored intelligence tests
 function Test-TailoredIntelligence {
     Write-Output "Running CrowdStrike Tailored Intelligence tests..."
-    cd $PSScriptRoot
+    # Skip this line
     python run_tailored_intel_update.py --test
-    if ($LASTEXITCODE -ne 0) {
+    # Skip this line
         Write-Output "Warning: Tailored Intelligence tests failed with exit code $LASTEXITCODE"
     } else {
         Write-Output "All Tailored Intelligence tests passed!"
@@ -27,23 +27,60 @@ function Test-TailoredIntelligence {
 # Function to test all intelligence scrapers
 function Test-IntelligenceScrapers {
     Write-Output "Testing all intelligence scrapers..."
-    cd $PSScriptRoot/backend
-    python manage.py shell -c "exec(open('../tests/run_scrapers_test.py').read())"
-    cd $PSScriptRoot
-    if ($LASTEXITCODE -ne 0) {
+    # Skip this line
+# FIXED: Using piping instead of redirection
+    # Store the current location
+    $currentLocation = Get-Location
+
+    try {
+        # Navigate to the backend directory
+        Set-Location "$PSScriptRoot/backend"
+
+        # Instead of using redirect, read the file content and pass it as a string to python
+        $scriptContent = Get-Content -Path "$PSScriptRoot/tests/run_scrapers_test.py" -Raw
+
+        # Use echo to pipe the content to python manage.py shell
+        $scriptContent | python manage.py shell
+    # Skip this line
+    # Skip this line
         Write-Output "Warning: Intelligence scraper tests had failures with exit code $LASTEXITCODE"
     } else {
         Write-Output "Intelligence scraper tests completed!"
     }
 }
 
-# Check for migrations that need to be applied
+
+# Function to test all intelligence scrapers
+function Test-IntelligenceScrapers {
+    Write-Output "Testing all intelligence scrapers..."
+    
+    # Save current location
+    $originalLocation = Get-Location
+    
+    # Navigate to the backend directory
+    Set-Location "$PSScriptRoot/backend"
+    
+    # Use the -c parameter to run Python code directly instead of using input redirection
+    python manage.py shell -c "exec(open('../tests/run_scrapers_test.py').read())"
+    
+    # Check the exit code
+    if ($LASTEXITCODE -ne 0) {
+        Write-Output "Warning: Intelligence scraper tests had failures with exit code $LASTEXITCODE"
+    } else {
+        Write-Output "Intelligence scraper tests completed!"
+    }
+    
+    # Return to original location
+    Set-Location $originalLocation
+}
+
+# Check for migrations
 function Apply-Migrations {
     Write-Output "Checking for and applying database migrations..."
-    cd $PSScriptRoot/backend
+    # Skip this line
     python manage.py makemigrations
     python manage.py migrate
-    cd $PSScriptRoot
+    # Skip this line
 }
 
 # Check if Redis is running in Docker
@@ -140,3 +177,4 @@ Write-Output "CTI Dashboard available at: http://localhost:3000"
 Write-Output "Backend API available at: http://localhost:8000"
 Write-Output "Tailored Intelligence module is active and data has been loaded"
 Write-Output "Multiple intelligence sources should now be visible in the dashboard"
+

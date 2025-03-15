@@ -27,14 +27,25 @@ function Test-TailoredIntelligence {
 # Function to test all intelligence scrapers
 function Test-IntelligenceScrapers {
     Write-Output "Testing all intelligence scrapers..."
-    cd $PSScriptRoot/backend
+    
+    # Save current location
+    $originalLocation = Get-Location
+    
+    # Navigate to the backend directory
+    Set-Location "$PSScriptRoot/backend"
+    
+    # Use the -c parameter to run Python code directly instead of using input redirection
     python manage.py shell -c "exec(open('../tests/run_scrapers_test.py').read())"
-    cd $PSScriptRoot
+    
+    # Check the exit code
     if ($LASTEXITCODE -ne 0) {
         Write-Output "Warning: Intelligence scraper tests had failures with exit code $LASTEXITCODE"
     } else {
         Write-Output "Intelligence scraper tests completed!"
     }
+    
+    # Return to original location
+    Set-Location $originalLocation
 }
 
 # Check for migrations that need to be applied
@@ -140,3 +151,4 @@ Write-Output "CTI Dashboard available at: http://localhost:3000"
 Write-Output "Backend API available at: http://localhost:8000"
 Write-Output "Tailored Intelligence module is active and data has been loaded"
 Write-Output "Multiple intelligence sources should now be visible in the dashboard"
+
